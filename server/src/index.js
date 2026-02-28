@@ -16,6 +16,21 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '50mb' }));
+
+// Content Security Policy middleware to allow Google Fonts and self-hosted resources
+app.use((req, res, next) => {
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self' https://apps.iaudit.global; " +
+        "font-src 'self' data: https://fonts.gstatic.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "connect-src 'self' https://apps.iaudit.global https://fonts.googleapis.com;"
+    );
+    next();
+});
+
 const router = express.Router();
 
 // Email Transporter Configuration
@@ -38,6 +53,11 @@ const generateOTP = () => {
 // Basic health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
+});
+
+// Root route to prevent 404
+app.get('/', (req, res) => {
+    res.send('AuditMate Backend is running.');
 });
 
 // Example route to get all companies (including sites and departments)
