@@ -421,13 +421,12 @@ app.post('/api/auth/signup', async (req, res) => {
         res.status(201).json(userWithoutPassword);
     } catch (error) {
         console.error('Error during direct signup:', error);
-        if (error.code === 'P1001') {
-            return res.status(503).json({
-                error: 'Database connection failed',
-                message: 'The server cannot reach the database. Please check your production database status.'
-            });
-        }
-        res.status(500).json({ error: 'Failed to create user' });
+        res.status(500).json({
+            error: 'Failed to create user',
+            message: error.message,
+            code: error.code,
+            meta: error.meta
+        });
     }
 });
 
