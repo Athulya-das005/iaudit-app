@@ -1,0 +1,55 @@
+import prisma from './src/prisma.js';
+import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
+
+async function diagnose() {
+    console.log('--- BACKEND DIAGNOSTIC START ---');
+    console.log('Time:', new Date().toISOString());
+    console.log('Environment:', process.env.NODE_ENV || 'not set');
+
+    // 1. Check Database connection
+    console.log('\n1. Testing Database Connection...');
+    try {
+        await prisma.$connect();
+        console.log('✅ Prisma connected to database.');
+
+        // Test a simple query
+        const userCount = await prisma.user.count();
+        console.log(`✅ Database query successful. Total users: ${userCount}`);
+
+        // Test Otp table access
+        console.log('Testing Otp table access...');
+        await prisma.otp.findFirst();
+        console.log('✅ Otp table is accessible.');
+    } catch (dbError) {
+        console.error('❌ Database connection/query failed:');
+        console.error(dbError);
+        console.log('\nTIP: Ensure your DATABASE_URL in server/.env is correct for EC2.');
+        console.log('Current DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 20) + '...');
+    }
+
+    // 2. Check Email service
+    console.log('\n2. Testing Email Service (Nodemailer)...');
+    try {
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'subs.safetynett@gmail.com',
+                pass: 'wdve zudb tzwf spyo'
+            }
+        });
+
+        await transporter.verify();
+        console.log('✅ Nodemailer transporter is ready.');
+    } catch (emailError) {
+        console.error('❌ Email service verification failed:');
+        console.error(emailError);
+        console.log('\nTIP: Ensure Gmail "App Password" is still valid and not blocked by AWS Security Groups.');
+    }
+
+    console.log('\n--- DIAGNOSTIC COMPLETE ---');
+    process.exit();
+}
+
+diagnose();

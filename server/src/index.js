@@ -329,23 +329,26 @@ app.post('/api/auth/send-otp', async (req, res) => {
         return res.status(400).json({ error: 'Email is required' });
     }
 
+    let step = 'Lookup existing user';
     try {
-        // Prevent signup if user already exists
+        // 1. Prevent signup if user already exists
         const existingUser = await prisma.user.findUnique({ where: { email } });
         if (existingUser) {
             return res.status(400).json({ error: 'Email already registered' });
         }
 
+        step = 'Generate and Store OTP';
         const otp = generateOTP();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
 
-        // Store OTP in database (Upsert: update if exists for this email, else create)
+        // Store OTP in database
         await prisma.otp.upsert({
             where: { email },
             update: { code: otp, expiresAt },
             create: { email, code: otp, expiresAt }
         });
 
+        step = 'Send Email';
         const mailOptions = {
             from: 'subs.safetynett@gmail.com',
             to: email,
@@ -358,27 +361,17 @@ app.post('/api/auth/send-otp', async (req, res) => {
         res.status(200).json({ message: 'OTP sent successfully' });
 
     } catch (error) {
-        console.error('--- SEND OTP FAILURE ---');
+        console.error(`--- SEND OTP FAILURE at step: ${step} ---`);
         console.error('Email:', email);
-        console.error('Error name:', error.name);
         console.error('Error message:', error.message);
-        if (error.code) console.error('Error code:', error.code);
-        if (error.command) console.error('Error command:', error.command);
         console.error('Full error:', error);
         console.error('--------------------------');
 
-        let clientMessage = 'Failed to send OTP';
-        if (error.message.includes('Prisma')) {
-            clientMessage = 'Database error while generating OTP';
-        } else if (error.code === 'EAUTH' || error.message.includes('Nodemailer')) {
-            clientMessage = 'Email service authentication failed';
-        }
-
         res.status(500).json({
-            error: clientMessage,
+            error: `Failed during: ${step}`,
             message: error.message,
-            stack: error.stack,
-            details: error
+            step: step,
+            stack: error.stack
         });
     }
 });
