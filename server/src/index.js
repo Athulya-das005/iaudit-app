@@ -376,7 +376,9 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
         res.status(500).json({
             error: clientMessage,
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            message: error.message,
+            stack: error.stack,
+            details: error
         });
     }
 });
