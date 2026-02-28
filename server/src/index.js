@@ -364,6 +364,18 @@ app.post('/api/auth/send-otp', async (req, res) => {
         console.error(`--- SEND OTP FAILURE at step: ${step} ---`);
         console.error('Email:', email);
         console.error('Error message:', error.message);
+
+        // Handle specific Prisma connection error
+        if (error.code === 'P1001') {
+            console.error('DATABASE CONNECTION ERROR: Production database unreachable at 127.0.0.1:5432');
+            return res.status(503).json({
+                error: 'Database connection failed',
+                message: 'The server cannot reach the database. Please check if PostgreSQL is running on the production server.',
+                code: 'P1001',
+                step: step
+            });
+        }
+
         console.error('Full error:', error);
         console.error('--------------------------');
 
