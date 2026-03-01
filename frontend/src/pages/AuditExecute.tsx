@@ -17,6 +17,8 @@ import {
   FileText,
   AlertCircle,
   ArrowDown,
+  Download,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +44,23 @@ import {
 } from "@/data/auditTemplates";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  Table as DocxTable,
+  TableRow as DocxTableRow,
+  TableCell as DocxTableCell,
+  WidthType,
+  HeadingLevel,
+  AlignmentType,
+  ImageRun
+} from "docx";
+import { saveAs } from "file-saver";
 
 const CLAUSES = [
   { id: "4", name: "4. CONTEXT OF THE ORGANISATION", isHeading: true },
@@ -260,6 +279,8 @@ const AuditExecute = () => {
             if (data.showExecutiveSummary !== undefined) setShowExecutiveSummary(data.showExecutiveSummary);
             if (data.showAuditParticipants !== undefined) setShowAuditParticipants(data.showAuditParticipants);
             if (data.showAuditFindings !== undefined) setShowAuditFindings(data.showAuditFindings);
+            if (data.clauseFiles) setClauseFiles(data.clauseFiles);
+            if (data.genericFiles) setGenericFiles(data.genericFiles);
           }
         }
       } catch (error) {
@@ -272,8 +293,8 @@ const AuditExecute = () => {
   }, [id]);
   const [sectionData, setSectionData] = useState<Record<number, string>>({});
   const [signatureData, setSignatureData] = useState<string | null>(null);
-  const [clauseFiles, setClauseFiles] = useState<Record<string, File[]>>({});
-  const [genericFiles, setGenericFiles] = useState<Record<string, File[]>>({});
+  const [clauseFiles, setClauseFiles] = useState<Record<string, { name: string; data: string; type: string }[]>>({});
+  const [genericFiles, setGenericFiles] = useState<Record<string, { name: string; data: string; type: string }[]>>({});
 
   // --------------------------------------------------------------------------
   // HANDLERS
@@ -608,14 +629,25 @@ const AuditExecute = () => {
     }));
   };
 
-  const handleClauseFileUpload = (clause: string, files: FileList | null) => {
+  const handleClauseFileUpload = async (clause: string, files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const newFiles = Array.from(files);
+
+    const newMedia: { name: string; data: string; type: string }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newMedia.push({ name: file.name, data: base64, type: file.type });
+    }
+
     setClauseFiles(prev => ({
       ...prev,
-      [clause]: [...(prev[clause] || []), ...newFiles]
+      [clause]: [...(prev[clause] || []), ...newMedia]
     }));
-    toast.success(`${newFiles.length} file(s) attached for Clause ${clause}`);
+    toast.success(`${newMedia.length} file(s) attached for Clause ${clause}`);
   };
 
   const removeClauseFile = (clause: string, indexToRemove: number) => {
@@ -625,14 +657,25 @@ const AuditExecute = () => {
     }));
   };
 
-  const handleGenericFileUpload = (key: string, files: FileList | null) => {
+  const handleGenericFileUpload = async (key: string, files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const newFiles = Array.from(files);
+
+    const newMedia: { name: string; data: string; type: string }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newMedia.push({ name: file.name, data: base64, type: file.type });
+    }
+
     setGenericFiles(prev => ({
       ...prev,
-      [key]: [...(prev[key] || []), ...newFiles]
+      [key]: [...(prev[key] || []), ...newMedia]
     }));
-    toast.success(`${newFiles.length} file(s) attached`);
+    toast.success(`${newMedia.length} file(s) attached`);
   };
 
   const removeGenericFile = (key: string, indexToRemove: number) => {
@@ -678,7 +721,9 @@ const AuditExecute = () => {
         showAuditParticipants,
         showAuditFindings,
         lastSaved: new Date().toISOString(),
-        progress: progressValue
+        progress: progressValue,
+        clauseFiles,
+        genericFiles
       };
 
       const res = await fetch(`${API_BASE_URL}/api/audit-plans/${id}`, {
@@ -700,6 +745,286 @@ const AuditExecute = () => {
       console.error("Save error:", error);
       toast.error("Failed to save audit progress");
     }
+  };
+
+  const exportToPDF = async () => {
+    const doc = new jsPDF();
+    const title = `${plan.auditName || 'Audit'} Report`;
+
+    doc.setFontSize(22);
+    doc.setTextColor(33, 56, 71);
+    doc.text(title, 14, 20);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+
+    // 1. Header Details
+    const headerData = [
+      ["Audit Name", plan.auditName || ""],
+      ["Template", template.title || ""],
+      ["Site/Location", plan.site?.name || plan.location || "N/A"],
+      ["Date", plan.date ? format(new Date(plan.date), "PPP") : "N/A"]
+    ];
+
+    autoTable(doc, {
+      startY: 35,
+      body: headerData,
+      theme: 'grid',
+      headStyles: { fillColor: [33, 56, 71] },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } }
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // 2. Checklist / Clause Data
+    doc.setFontSize(14);
+    doc.setTextColor(33, 56, 71);
+    doc.text("Checklist Review", 14, currentY);
+    currentY += 10;
+
+    const checklistRows: any[] = [];
+    if (template.type === "checklist") {
+      (template.content as ChecklistContent[]).forEach((item, idx) => {
+        const data = (checklistData[idx] || {}) as any;
+        checklistRows.push([item.clause, item.question, data.findings || "—", data.evidence || "—"]);
+      });
+    } else if (template.type === "clause-checklist") {
+      clausesToRender.forEach(c => {
+        const data = (clauseData[c.id] || {}) as any;
+        checklistRows.push([c.id, c.name, data.findingType || "—", data.evidence || "—"]);
+      });
+    }
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Clause", "Question/Requirement", "Finding/Status", "Evidence"]],
+      body: checklistRows,
+      theme: 'grid',
+      headStyles: { fillColor: [33, 56, 71] }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // 2.1 Summary Counts
+    doc.setFontSize(14);
+    doc.text("Audit Summary", 14, currentY);
+    currentY += 10;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [["OFI", "Minor NCR", "Major NCR", "Positive Aspects"]],
+      body: [[summaryCounts.ofi, summaryCounts.minor, summaryCounts.major, summaryCounts.positive]],
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129] }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // 2.2 Participants
+    if (participants.length > 0) {
+      doc.setFontSize(14);
+      doc.text("Audit Participants", 14, currentY);
+      currentY += 10;
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [["Name", "Position", "Opening", "Closing"]],
+        body: participants.map(p => [p.name || "—", p.position || "—", p.opening ? "Yes" : "No", p.closing ? "Yes" : "No"]),
+        theme: 'grid',
+        headStyles: { fillColor: [33, 56, 71] }
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // 3. Media Section
+    doc.setFontSize(14);
+    doc.text("Evidence & Media", 14, currentY);
+    currentY += 10;
+
+    const allMedia = [...Object.values(clauseFiles).flat(), ...Object.values(genericFiles).flat()];
+
+    if (allMedia.length === 0) {
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text("No media attachments found.", 14, currentY);
+    } else {
+      for (const m of allMedia) {
+        if (currentY > 250) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        if (m.type.startsWith("image/")) {
+          try {
+            doc.addImage(m.data, m.type.split('/')[1].toUpperCase(), 14, currentY, 60, 45);
+            doc.setFontSize(8);
+            doc.text(m.name, 14, currentY + 48);
+            currentY += 55;
+          } catch (e) {
+            console.error("PDF Image add failed", e);
+          }
+        } else {
+          doc.setFontSize(10);
+          doc.setTextColor(100);
+          doc.text(`• File: ${m.name} (${m.type})`, 14, currentY);
+          currentY += 8;
+        }
+      }
+    }
+
+    doc.save(`${plan.auditName || 'Audit'}_Report.pdf`);
+  };
+
+  const exportToExcel = () => {
+    const rows: any[] = [];
+
+    if (template.type === "checklist") {
+      (template.content as ChecklistContent[]).forEach((item, idx) => {
+        const data = (checklistData[idx] || {}) as any;
+        rows.push({
+          "Clause": item.clause,
+          "Question": item.question,
+          "Finding": data.findings,
+          "Evidence": data.evidence
+        });
+      });
+    } else {
+      clausesToRender.forEach(c => {
+        const data = (clauseData[c.id] || {}) as any;
+        rows.push({
+          "Clause": c.id,
+          "Requirement": c.name,
+          "Status": data.findingType,
+          "Evidence": data.evidence
+        });
+      });
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Audit Report");
+    XLSX.writeFile(workbook, `${plan.auditName || 'Audit'}_Report.xlsx`);
+  };
+
+  const exportToWord = async () => {
+    const mainContent: any[] = [
+      new Paragraph({
+        text: `${plan.auditName || 'Audit'} Report`,
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER
+      }),
+      new Paragraph({ text: `Generated on: ${new Date().toLocaleDateString()}`, spacing: { after: 400 } }),
+    ];
+
+    // Checklist Table
+    const tableRows = (template.type === "checklist" ? (template.content as ChecklistContent[]) : clausesToRender).map((item, idx) => {
+      const cId = (item as any).clause || (item as any).id;
+      const qText = (item as any).question || (item as any).name;
+      const data = (template.type === "checklist" ? checklistData[idx] : clauseData[cId]) as any;
+
+      return new DocxTableRow({
+        children: [
+          new DocxTableCell({ children: [new Paragraph(cId)] }),
+          new DocxTableCell({ children: [new Paragraph(qText)] }),
+          new DocxTableCell({ children: [new Paragraph(String((data as any)?.findings || (data as any)?.findingType || "—"))] }),
+          new DocxTableCell({ children: [new Paragraph(String((data as any)?.evidence || "—"))] }),
+        ]
+      });
+    });
+
+    mainContent.push(new DocxTable({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new DocxTableRow({
+          children: ["Clause", "Requirement", "Finding", "Evidence"].map(h =>
+            new DocxTableCell({
+              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: "FFFFFF" })] })],
+              shading: { fill: "213847" }
+            })
+          )
+        }),
+        ...tableRows
+      ]
+    }));
+
+    // Summary Table
+    mainContent.push(new Paragraph({ text: "Audit Summary", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }));
+    mainContent.push(new DocxTable({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new DocxTableRow({
+          children: ["OFI", "Minor NCR", "Major NCR", "Positive Aspects"].map(h =>
+            new DocxTableCell({
+              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: "FFFFFF" })] })],
+              shading: { fill: "10B981" }
+            })
+          )
+        }),
+        new DocxTableRow({
+          children: [summaryCounts.ofi, summaryCounts.minor, summaryCounts.major, summaryCounts.positive].map(v =>
+            new DocxTableCell({ children: [new Paragraph(String(v))] })
+          )
+        })
+      ]
+    }));
+
+    // Participants Table
+    if (participants.length > 0) {
+      mainContent.push(new Paragraph({ text: "Audit Participants", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }));
+      mainContent.push(new DocxTable({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new DocxTableRow({
+            children: ["Name", "Position", "Opening", "Closing"].map(h =>
+              new DocxTableCell({
+                children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, color: "FFFFFF" })] })],
+                shading: { fill: "213847" }
+              })
+            )
+          }),
+          ...participants.map(p => new DocxTableRow({
+            children: [p.name, p.position, p.opening ? "Yes" : "No", p.closing ? "Yes" : "No"].map(v =>
+              new DocxTableCell({ children: [new Paragraph(String(v || "—"))] })
+            )
+          }))
+        ]
+      }));
+    }
+
+    // Media Section
+    const allMedia = [...Object.values(clauseFiles).flat(), ...Object.values(genericFiles).flat()];
+    if (allMedia.length > 0) {
+      mainContent.push(new Paragraph({ text: "Media & Attachments", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }));
+      for (const m of allMedia) {
+        if (m.type.startsWith("image/")) {
+          try {
+            const base64Data = m.data.split(',')[1];
+            const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            mainContent.push(new Paragraph({
+              children: [
+                new ImageRun({
+                  data: buffer,
+                  transformation: { width: 400, height: 300 }
+                })
+              ]
+            }));
+            mainContent.push(new Paragraph({ text: m.name, style: "Caption" }));
+          } catch (e) {
+            console.error("Word Image failed", e);
+          }
+        } else {
+          mainContent.push(new Paragraph({ text: `• ${m.name} (${m.type})`, bullet: { level: 0 } }));
+        }
+      }
+    }
+
+    const doc = new Document({
+      sections: [{ children: mainContent }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${plan.auditName || 'Audit'}_Report.docx`);
   };
 
   return (
@@ -895,6 +1220,7 @@ const AuditExecute = () => {
               <Button
                 variant="outline"
                 className="w-full justify-start gap-3 h-10 text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                onClick={exportToExcel}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -918,6 +1244,7 @@ const AuditExecute = () => {
               <Button
                 variant="outline"
                 className="w-full justify-start gap-3 h-10 text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                onClick={exportToPDF}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -944,6 +1271,7 @@ const AuditExecute = () => {
               <Button
                 variant="outline"
                 className="w-full justify-start gap-3 h-10 text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                onClick={exportToWord}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"

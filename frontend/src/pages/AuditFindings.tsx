@@ -12,15 +12,30 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, ArrowRight, RefreshCw, SearchX, Search } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import { AlertTriangle, ArrowRight, RefreshCw, SearchX, Search, Edit2, Upload, FileText, Trash2, Download } from "lucide-react";
 import { auditTemplates, ChecklistContent } from "@/data/auditTemplates";
 import ReusablePagination from "@/components/ReusablePagination";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { Document, Packer, Paragraph, TextRun, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType, HeadingLevel, AlignmentType, ImageRun, BorderStyle } from "docx";
+import { saveAs } from "file-saver";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type FindingType = "OFI" | "Minor" | "Major";
 
 interface Finding {
+    id: string; // unique string for consistent matching
     auditId: number;
     auditName: string;
     clauseRef: string;
@@ -30,6 +45,8 @@ interface Finding {
     actionBy: string;
     closeDate: string;
     assignTo: string;
+    isOverridden?: boolean;
+    media?: { name: string, data: string, type: string }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -70,14 +87,14 @@ function extractFindings(plan: any): Finding[] {
     const auditName: string = plan.auditName || `Audit #${plan.id}`;
 
     // ── clause-checklist (AuditExecute – clauseData) ──────────────────────────
-    // Stores findingType per clause id key: 'OFI' | 'Minor' | 'Major' | 'C'
     if (data.clauseData && typeof data.clauseData === "object") {
         Object.entries(data.clauseData).forEach(([clauseId, entry]: any) => {
             const ft: string | undefined = entry?.findingType;
-            if (!ft || ft === "C") return; // Strictly ignore C and empty types!
+            if (!ft || ft === "C") return;
 
             if (ft === "OFI" || ft === "Minor" || ft === "Major") {
                 results.push({
+                    id: `clause-${clauseId}`,
                     auditId: plan.id,
                     auditName,
                     clauseRef: `Clause ${clauseId}`,
@@ -93,10 +110,7 @@ function extractFindings(plan: any): Finding[] {
     }
 
     // ── checklist table (ExecuteAuditTemplate – checklistData) ────────────────
-    // The C/OFI/Min/Maj buttons store their label in checklistData[index].findings
-    // Values: 'C' | 'OFI' | 'Min' | 'Maj'  (also accept 'Minor'/'Major' for AuditExecute)
     if (data.checklistData && typeof data.checklistData === "object") {
-        // Resolve the template's checklist content so we can look up the clause per index
         const templateContent = (() => {
             const tmplId = plan.templateId;
             if (!tmplId) return null;
@@ -115,17 +129,16 @@ function extractFindings(plan: any): Finding[] {
             else if (raw === "Maj" || raw === "Major") type = "Major";
 
             if (type) {
-                // Priority: 1) clause persisted directly in entry, 2) template lookup, 3) Item N
                 const itemIndex = Number(idx);
                 const templateItem = templateContent?.[itemIndex];
-                const clauseRef =
-                    entry.clause
-                        ? `Clause ${entry.clause}`
-                        : templateItem?.clause
-                            ? `Clause ${templateItem.clause}`
-                            : `Item ${itemIndex + 1}`;
+                const clauseRef = entry.clause
+                    ? `Clause ${entry.clause}`
+                    : templateItem?.clause
+                        ? `Clause ${templateItem.clause}`
+                        : `Item ${itemIndex + 1}`;
 
                 results.push({
+                    id: `checklist-${idx}`,
                     auditId: plan.id,
                     auditName,
                     clauseRef,
@@ -148,6 +161,7 @@ function extractFindings(plan: any): Finding[] {
 
             if (ft === "OFI" || ft === "Minor" || ft === "Major") {
                 results.push({
+                    id: `process-${idx}`,
                     auditId: plan.id,
                     auditName,
                     clauseRef: `Process #${idx + 1}`,
@@ -162,7 +176,7 @@ function extractFindings(plan: any): Finding[] {
         });
     }
 
-    // ── Deduplicate by (auditId, clauseRef) – keep highest severity ───────────
+    // Deduplicate
     const SEVERITY: Record<FindingType, number> = { OFI: 1, Minor: 2, Major: 3 };
     const seen = new Map<string, Finding>();
     results.forEach((f) => {
@@ -175,8 +189,6 @@ function extractFindings(plan: any): Finding[] {
 
     return Array.from(seen.values());
 }
-
-
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -191,8 +203,7 @@ const FILTER_STYLE: Record<FilterType, string> = {
     Major: "bg-red-600 text-white hover:bg-red-700",
 };
 
-const FILTER_INACTIVE =
-    "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50";
+const FILTER_INACTIVE = "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50";
 
 export default function AuditFindings() {
     const navigate = useNavigate();
@@ -200,6 +211,8 @@ export default function AuditFindings() {
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<FilterType>("All");
     const [searchQuery, setSearchQuery] = useState("");
+    const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -212,8 +225,23 @@ export default function AuditFindings() {
             const res = await fetch(`${API_BASE_URL}/api/audit-plans?userId=${user.id}`);
             const plans: any[] = await res.json();
             const all: Finding[] = [];
+
             plans.forEach((plan) => {
-                all.push(...extractFindings(plan));
+                const baseFindings = extractFindings(plan);
+                const overrides = plan.findingsData ? (typeof plan.findingsData === 'string' ? JSON.parse(plan.findingsData) : plan.findingsData) : {};
+
+                const merged = baseFindings.map(f => {
+                    if (overrides[f.id]) {
+                        return {
+                            ...f,
+                            ...overrides[f.id],
+                            isOverridden: true
+                        };
+                    }
+                    return f;
+                });
+
+                all.push(...merged);
             });
             setFindings(all);
         } catch {
@@ -237,10 +265,9 @@ export default function AuditFindings() {
         );
     });
 
-    const filtered =
-        activeFilter === "All"
-            ? searchedFindings
-            : searchedFindings.filter((f) => f.type === activeFilter);
+    const filtered = activeFilter === "All"
+        ? searchedFindings
+        : searchedFindings.filter((f) => f.type === activeFilter);
 
     const countOf = (type: FindingType) =>
         searchedFindings.filter((f) => f.type === type).length;
@@ -251,15 +278,250 @@ export default function AuditFindings() {
         currentPage * itemsPerPage
     );
 
-    // Reset page to 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchQuery, activeFilter]);
 
+    const handleSaveFinding = async (updated: Finding) => {
+        setIsSaving(true);
+        try {
+            const resPlan = await fetch(`${API_BASE_URL}/api/audit-plans?id=${updated.auditId}`);
+            const plans = await resPlan.json();
+            const plan = plans.find((p: any) => p.id === updated.auditId);
+            if (!plan) throw new Error("Plan not found");
+
+            const currentOverrides = plan.findingsData ? (typeof plan.findingsData === 'string' ? JSON.parse(plan.findingsData) : plan.findingsData) : {};
+            const newOverrides = {
+                ...currentOverrides,
+                [updated.id]: {
+                    description: updated.description,
+                    actionBy: updated.actionBy,
+                    details: updated.details,
+                    assignTo: updated.assignTo,
+                    closeDate: updated.closeDate,
+                    media: updated.media
+                }
+            };
+
+            const resUpdate = await fetch(`${API_BASE_URL}/api/audit-plans/${updated.auditId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ findingsData: newOverrides })
+            });
+
+            if (resUpdate.ok) {
+                toast.success("Finding updated successfully");
+                setEditingFinding(null);
+                fetchFindings();
+            } else {
+                throw new Error("Failed to update");
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to save changes");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleFileUpload = (files: FileList | null) => {
+        if (!files || !editingFinding) return;
+
+        const newFiles = Array.from(files);
+        newFiles.forEach(file => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                setEditingFinding(prev => {
+                    if (!prev) return prev;
+                    const media = [...(prev.media || []), {
+                        name: file.name,
+                        data: base64String,
+                        type: file.type
+                    }];
+                    return { ...prev, media };
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const removeMedia = (index: number) => {
+        setEditingFinding(prev => {
+            if (!prev || !prev.media) return prev;
+            return {
+                ...prev,
+                media: prev.media.filter((_, i) => i !== index)
+            };
+        });
+    };
+
+    const exportToPDF = async () => {
+        const doc = new jsPDF();
+        doc.setFontSize(22);
+        doc.setTextColor(33, 56, 71);
+        doc.text("Audit Findings Report", 14, 20);
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+
+        const tableData = filtered.map((f, i) => [
+            i + 1,
+            f.auditName,
+            f.clauseRef,
+            f.type,
+            f.details,
+            f.description,
+            f.actionBy
+        ]);
+
+        autoTable(doc, {
+            startY: 35,
+            head: [["#", "Audit Name", "Clause", "Type", "Finding Details", "Description", "Action By"]],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { fillColor: [33, 56, 71] },
+        });
+
+        // Add media if exists
+        let currentY = (doc as any).lastAutoTable.finalY + 20;
+
+        for (const finding of filtered) {
+            if (finding.media && finding.media.length > 0) {
+                if (currentY > 250) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+                doc.setFontSize(12);
+                doc.setTextColor(33, 56, 71);
+                doc.text(`Attachments for ${finding.clauseRef}:`, 14, currentY);
+                currentY += 10;
+
+                for (const m of finding.media) {
+                    if (m.type.startsWith("image/")) {
+                        try {
+                            doc.addImage(m.data, m.type.split('/')[1].toUpperCase(), 14, currentY, 50, 40);
+                            currentY += 45;
+                        } catch (e) {
+                            console.error("Failed to add image to PDF", e);
+                        }
+                    } else {
+                        doc.setFontSize(10);
+                        doc.setTextColor(100);
+                        doc.text(`- File: ${m.name} (${m.type})`, 20, currentY);
+                        currentY += 7;
+                    }
+
+                    if (currentY > 250) {
+                        doc.addPage();
+                        currentY = 20;
+                    }
+                }
+                currentY += 10;
+            }
+        }
+
+        doc.save("Audit_Findings.pdf");
+    };
+
+    const exportToExcel = () => {
+        const worksheet = XLSX.utils.json_to_sheet(filtered.map(f => ({
+            "Audit Name": f.auditName,
+            "Clause": f.clauseRef,
+            "Type": f.type,
+            "Finding Details": f.details,
+            "Description": f.description,
+            "Action By": f.actionBy,
+            "Target Date": f.closeDate,
+            "Assigned To": f.assignTo
+        })));
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Findings");
+        XLSX.writeFile(workbook, "Audit_Findings.xlsx");
+    };
+
+    const exportToWord = async () => {
+        const tableRows = filtered.map(f => new DocxTableRow({
+            children: [
+                new DocxTableCell({ children: [new Paragraph(f.auditName)] }),
+                new DocxTableCell({ children: [new Paragraph(f.clauseRef)] }),
+                new DocxTableCell({ children: [new Paragraph(f.type)] }),
+                new DocxTableCell({ children: [new Paragraph(f.details)] }),
+                new DocxTableCell({ children: [new Paragraph(f.description)] }),
+                new DocxTableCell({ children: [new Paragraph(f.actionBy || "—")] }),
+            ]
+        }));
+
+        const mainContent: any[] = [
+            new Paragraph({
+                text: "Audit Findings Report",
+                heading: HeadingLevel.HEADING_1,
+                alignment: AlignmentType.CENTER
+            }),
+            new Paragraph({ text: "" }),
+            new DocxTable({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                rows: [
+                    new DocxTableRow({
+                        children: ["Audit Name", "Clause", "Type", "Details", "Description", "Action By"].map(h =>
+                            new DocxTableCell({
+                                children: [new Paragraph({
+                                    children: [new TextRun({ text: h, bold: true, color: "FFFFFF" })]
+                                })],
+                                shading: { fill: "213847" }
+                            })
+                        )
+                    }),
+                    ...tableRows
+                ]
+            }),
+            new Paragraph({ text: "" })
+        ];
+
+        for (const f of filtered) {
+            if (f.media && f.media.length > 0) {
+                mainContent.push(new Paragraph({
+                    text: `Attachments for ${f.clauseRef}:`,
+                    heading: HeadingLevel.HEADING_2,
+                    spacing: { before: 400 }
+                }));
+
+                for (const m of f.media) {
+                    if (m.type.startsWith("image/")) {
+                        try {
+                            const base64Data = m.data.split(',')[1];
+                            const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+                            mainContent.push(new Paragraph({
+                                children: [
+                                    new ImageRun({
+                                        data: buffer,
+                                        transformation: { width: 300, height: 200 }
+                                    })
+                                ]
+                            }));
+                        } catch (e) {
+                            console.error("Failed to add image to Word", e);
+                        }
+                    } else {
+                        mainContent.push(new Paragraph({
+                            children: [new TextRun({ text: `- File: ${m.name} (${m.type})`, italics: true })]
+                        }));
+                    }
+                }
+            }
+        }
+
+        const doc = new Document({
+            sections: [{ children: mainContent }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        saveAs(blob, "Audit_Findings.docx");
+    };
+
     return (
         <div className="flex-1 p-8 pt-6 bg-white min-h-screen">
             <div className="max-w-6xl mx-auto space-y-6 pb-16">
-                {/* ── Header ── */}
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -270,67 +532,53 @@ export default function AuditFindings() {
                             All OFI, Minor N/C and Major N/C findings across every audit.
                         </p>
                     </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={fetchFindings}
-                        className="gap-2 text-slate-600 border-slate-200"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => exportToPDF()} className="gap-2 text-slate-600 border-slate-200">
+                            <Download className="w-4 h-4" /> PDF
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportToExcel()} className="gap-2 text-slate-600 border-slate-200">
+                            <Download className="w-4 h-4" /> Excel
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => exportToWord()} className="gap-2 text-slate-600 border-slate-200">
+                            <Download className="w-4 h-4" /> Word
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={fetchFindings} className="gap-2 text-slate-600 border-slate-200 ml-2">
+                            <RefreshCw className="w-4 h-4" /> Refresh
+                        </Button>
+                    </div>
                 </div>
 
-                {/* ── Summary Cards ── */}
                 <div className="grid grid-cols-3 gap-4">
-                    {(
-                        [
-                            { type: "OFI", label: "OFI", accent: "amber" },
-                            { type: "Minor", label: "Minor N/C", accent: "orange" },
-                            { type: "Major", label: "Major N/C", accent: "red" },
-                        ] as const
-                    ).map(({ type, label, accent }) => (
-                        <button
-                            key={type}
-                            onClick={() => setActiveFilter(type)}
-                            className={`rounded-xl border p-5 text-left transition-all shadow-sm cursor-pointer
-                ${activeFilter === type
-                                    ? `border-${accent}-400 ring-2 ring-${accent}-200 bg-${accent}-50`
-                                    : "border-slate-200 bg-white hover:bg-slate-50"
-                                }`}
-                        >
-                            <span
-                                className={`text-xs font-bold uppercase tracking-widest text-${accent}-600`}
+                    {(["OFI", "Minor", "Major"] as const).map((type) => {
+                        const label = type === "OFI" ? "OFI" : type === "Minor" ? "Minor N/C" : "Major N/C";
+                        const accent = type === "OFI" ? "amber" : type === "Minor" ? "orange" : "red";
+                        return (
+                            <button
+                                key={type}
+                                onClick={() => setActiveFilter(type)}
+                                className={`rounded-xl border p-5 text-left transition-all shadow-sm cursor-pointer
+                    ${activeFilter === type ? `border-${accent}-400 ring-2 ring-${accent}-200 bg-${accent}-50` : "border-slate-200 bg-white hover:bg-slate-50"}`}
                             >
-                                {label}
-                            </span>
-                            <div
-                                className={`text-4xl font-extrabold mt-1 text-${accent}-600`}
-                            >
-                                {countOf(type)}
-                            </div>
-                            <div className="text-xs text-slate-500 mt-1">findings</div>
-                        </button>
-                    ))}
+                                <span className={`text-xs font-bold uppercase tracking-widest text-${accent}-600`}>{label}</span>
+                                <div className={`text-4xl font-extrabold mt-1 text-${accent}-600`}>{countOf(type)}</div>
+                                <div className="text-xs text-slate-500 mt-1">findings</div>
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* ── Filter Pills and Search ── */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex gap-2 flex-wrap">
                         {FILTERS.map((f) => (
                             <button
                                 key={f}
                                 onClick={() => setActiveFilter(f)}
-                                className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all shadow-sm ${activeFilter === f ? FILTER_STYLE[f] : FILTER_INACTIVE
-                                    }`}
+                                className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all shadow-sm ${activeFilter === f ? FILTER_STYLE[f] : FILTER_INACTIVE}`}
                             >
-                                {f === "All"
-                                    ? `All (${searchedFindings.length})`
-                                    : f === "Minor"
-                                        ? `Minor N/C (${countOf(f)})`
-                                        : f === "Major"
-                                            ? `Major N/C (${countOf(f)})`
-                                            : `OFI (${countOf(f)})`}
+                                {f === "All" ? `All (${searchedFindings.length})` :
+                                    f === "Minor" ? `Minor N/C (${countOf(f)})` :
+                                        f === "Major" ? `Major N/C (${countOf(f)})` :
+                                            `OFI (${countOf(f)})`}
                             </button>
                         ))}
                     </div>
@@ -346,23 +594,14 @@ export default function AuditFindings() {
                     </div>
                 </div>
 
-                {/* ── Table ── */}
                 {loading ? (
                     <div className="flex items-center justify-center py-24 text-slate-400 text-sm gap-2">
-                        <RefreshCw className="w-5 h-5 animate-spin" />
-                        Loading findings…
+                        <RefreshCw className="w-5 h-5 animate-spin" /> Loading findings…
                     </div>
                 ) : filtered.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
                         <SearchX className="w-12 h-12 opacity-40" />
                         <p className="text-base font-semibold">No findings found</p>
-                        <p className="text-sm text-center max-w-sm">
-                            {searchQuery
-                                ? `No results found for "${searchQuery}".`
-                                : activeFilter === "All"
-                                    ? "No OFI, Minor or Major findings have been recorded yet."
-                                    : `No ${activeFilter === "Minor" ? "Minor N/C" : activeFilter === "Major" ? "Major N/C" : "OFI"} findings found.`}
-                        </p>
                     </div>
                 ) : (
                     <>
@@ -370,79 +609,45 @@ export default function AuditFindings() {
                             <Table>
                                 <TableHeader className="bg-[#213847]">
                                     <TableRow className="hover:bg-slate-800 divide-x divide-slate-600">
-                                        <TableHead className="text-white font-bold w-12 text-center">
-                                            #
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[20%]">
-                                            Audit Name
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[12%]">
-                                            Clause / Item
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[10%]">
-                                            Type
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[22%]">
-                                            Finding Details
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[22%]">
-                                            Description
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-[12%]">
-                                            Action By
-                                        </TableHead>
-                                        <TableHead className="text-white font-bold w-20 text-center">
-                                            View
-                                        </TableHead>
+                                        <TableHead className="text-white font-bold w-12 text-center">#</TableHead>
+                                        <TableHead className="text-white font-bold w-[20%]">Audit Name</TableHead>
+                                        <TableHead className="text-white font-bold w-[12%]">Clause / Item</TableHead>
+                                        <TableHead className="text-white font-bold w-[10%]">Type</TableHead>
+                                        <TableHead className="text-white font-bold w-[22%]">Finding Details</TableHead>
+                                        <TableHead className="text-white font-bold w-[22%]">Description</TableHead>
+                                        <TableHead className="text-white font-bold w-[12%]">Action By</TableHead>
+                                        <TableHead className="text-white font-bold w-20 text-center">View</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {paginatedFindings.map((finding, idx) => {
                                         const cfg = TYPE_CONFIG[finding.type];
                                         return (
-                                            <TableRow
-                                                key={`${finding.auditId}-${finding.clauseRef}-${idx}`}
-                                                className="bg-white hover:bg-slate-50 transition-colors divide-x divide-slate-100"
-                                            >
-                                                <TableCell className="text-center text-slate-500 font-medium text-sm">
-                                                    {(currentPage - 1) * itemsPerPage + idx + 1}
-                                                </TableCell>
-                                                <TableCell className="font-semibold text-slate-800 text-sm py-3">
-                                                    {finding.auditName}
-                                                </TableCell>
+                                            <TableRow key={`${finding.auditId}-${finding.clauseRef}-${idx}`} className="bg-white hover:bg-slate-50 transition-colors divide-x divide-slate-100">
+                                                <TableCell className="text-center text-slate-500 font-medium text-sm">{(currentPage - 1) * itemsPerPage + idx + 1}</TableCell>
+                                                <TableCell className="font-semibold text-slate-800 text-sm py-3">{finding.auditName}</TableCell>
                                                 <TableCell className="text-slate-600 text-sm font-mono">
-                                                    {finding.clauseRef}
+                                                    <div className="flex items-center gap-2">
+                                                        {finding.clauseRef}
+                                                        {finding.media && finding.media.length > 0 && (
+                                                            <span title={`${finding.media.length} attachments`}>
+                                                                <Upload className="w-3 h-3 text-amber-500" />
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <span
-                                                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold ring-1 ${cfg.bg} ${cfg.text} ${cfg.ring}`}
-                                                    >
-                                                        {cfg.label}
-                                                    </span>
+                                                    <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold ring-1 ${cfg.bg} ${cfg.text} ${cfg.ring}`}>{cfg.label}</span>
                                                 </TableCell>
                                                 <TableCell className="text-slate-600 text-sm max-w-[220px]">
-                                                    <p className="line-clamp-3 leading-snug">
-                                                        {finding.details || "—"}
-                                                    </p>
+                                                    <p className="line-clamp-3 leading-snug">{finding.details || "—"}</p>
                                                 </TableCell>
                                                 <TableCell className="text-slate-600 text-sm max-w-[220px]">
-                                                    <p className="line-clamp-3 leading-snug">
-                                                        {finding.description || "—"}
-                                                    </p>
+                                                    <p className="line-clamp-3 leading-snug">{finding.description || "—"}</p>
                                                 </TableCell>
-                                                <TableCell className="text-slate-600 text-sm font-medium">
-                                                    {finding.actionBy || "—"}
-                                                </TableCell>
+                                                <TableCell className="text-slate-600 text-sm font-medium">{finding.actionBy || "—"}</TableCell>
                                                 <TableCell className="text-center">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            navigate(`/audit/execute/${finding.auditId}`, { state: { focusFindings: true } })
-                                                        }
-                                                        className="h-8 w-8 p-0 text-slate-400 hover:text-slate-800"
-                                                        title="Go to audit"
-                                                    >
+                                                    <Button variant="ghost" size="sm" onClick={() => navigate(`/audit/execute/${finding.auditId}`, { state: { focusFindings: true } })} className="h-8 w-8 p-0 text-slate-400 hover:text-slate-800">
                                                         <ArrowRight className="w-4 h-4" />
                                                     </Button>
                                                 </TableCell>
@@ -463,6 +668,93 @@ export default function AuditFindings() {
                     </>
                 )}
             </div>
+
+            <Dialog open={!!editingFinding} onOpenChange={(open) => !open && setEditingFinding(null)}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Edit2 className="w-5 h-5 text-amber-500" /> Edit Finding Details
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {editingFinding && (
+                        <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-slate-700">Audit</label>
+                                    <Input value={editingFinding.auditName} disabled className="bg-slate-50" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-slate-700">Clause</label>
+                                    <Input value={editingFinding.clauseRef} disabled className="bg-slate-50" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-semibold text-slate-700">Details (Evidence)</label>
+                                <Textarea value={editingFinding.details} onChange={(e) => setEditingFinding({ ...editingFinding, details: e.target.value })} className="min-h-[80px]" />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-semibold text-slate-700">Description (Non-conformity statement)</label>
+                                <Textarea value={editingFinding.description} onChange={(e) => setEditingFinding({ ...editingFinding, description: e.target.value })} className="min-h-[80px]" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-slate-700">Action By</label>
+                                    <Input value={editingFinding.actionBy} onChange={(e) => setEditingFinding({ ...editingFinding, actionBy: e.target.value })} />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-slate-700">Target Date</label>
+                                    <Input type="date" value={editingFinding.closeDate} onChange={(e) => setEditingFinding({ ...editingFinding, closeDate: e.target.value })} />
+                                </div>
+                            </div>
+
+                            {/* Media Attachment Section */}
+                            <div className="space-y-3 pt-4 border-t border-slate-100">
+                                <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                    <Upload className="w-4 h-4 text-slate-400" /> Attached Media / Files
+                                </label>
+
+                                <div className="grid grid-cols-3 gap-3">
+                                    {editingFinding.media?.map((m, idx) => (
+                                        <div key={idx} className="relative group rounded-lg border border-slate-200 p-2 bg-slate-50 overflow-hidden">
+                                            {m.type.startsWith("image/") ? (
+                                                <img src={m.data} alt={m.name} className="w-full h-20 object-cover rounded shadow-sm" />
+                                            ) : (
+                                                <div className="w-full h-20 flex flex-col items-center justify-center text-slate-400">
+                                                    <FileText className="w-8 h-8" />
+                                                    <span className="text-[10px] mt-1 truncate w-full px-1 text-center">{m.name}</span>
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={() => removeMedia(idx)}
+                                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                                        <Upload className="w-6 h-6 text-slate-300" />
+                                        <span className="text-xs text-slate-400 mt-1">Upload</span>
+                                        <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e.target.files)} accept="image/*,.pdf,.doc,.docx" />
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditingFinding(null)} disabled={isSaving}>Cancel</Button>
+                        <Button className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => editingFinding && handleSaveFinding(editingFinding)} disabled={isSaving}>
+                            {isSaving ? "Saving..." : "Save Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
