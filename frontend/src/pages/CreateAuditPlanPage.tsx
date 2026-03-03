@@ -386,13 +386,39 @@ const CreateAuditPlanPage = () => {
                                             <SelectValue placeholder="Choose an audit template…" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {auditTemplates
-                                                .filter(template => !program?.isoStandard || program.isoStandard.includes(template.standard))
-                                                .map(template => (
+                                            {(() => {
+                                                const standards = program?.isoStandard ? program.isoStandard.split(',').map(s => s.trim()) : [];
+                                                const isMultiStandard = standards.length > 1;
+
+                                                const filtered = auditTemplates.filter(template =>
+                                                    !program?.isoStandard || standards.some(s => template.standard.includes(s) || s.includes(template.standard))
+                                                );
+
+                                                if (isMultiStandard) {
+                                                    // For multi-standard, we want exactly one of each type if possible,
+                                                    // but definitely the integrated one.
+                                                    const uniqueTypes = new Set();
+                                                    return filtered
+                                                        .filter(t => {
+                                                            if (t.isIntegrated) return true;
+                                                            if (uniqueTypes.has(t.type)) return false;
+                                                            uniqueTypes.add(t.type);
+                                                            return true;
+                                                        })
+                                                        .slice(0, 3) // Hard limit to 3 as requested
+                                                        .map(template => (
+                                                            <SelectItem key={template.id} value={template.id}>
+                                                                {template.title} <span className="text-slate-400 text-xs ml-2">({template.standard})</span>
+                                                            </SelectItem>
+                                                        ));
+                                                }
+
+                                                return filtered.map(template => (
                                                     <SelectItem key={template.id} value={template.id}>
                                                         {template.title} <span className="text-slate-400 text-xs ml-2">({template.standard})</span>
                                                     </SelectItem>
-                                                ))}
+                                                ));
+                                            })()}
                                         </SelectContent>
                                     </Select>
                                     {selectedTemplateId && (
