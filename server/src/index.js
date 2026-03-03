@@ -740,6 +740,13 @@ app.get('/api/audit-programs', async (req, res) => {
                         lastName: true
                     }
                 },
+                auditors: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true
+                    }
+                },
                 // For the list view, we only need a flag if schedule data exists
                 scheduleData: true
             }
@@ -893,6 +900,13 @@ app.get('/api/audit-plans', async (req, res) => {
                 // We fetch auditData only to calculate progress on server
                 auditData: true,
                 leadAuditor: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true
+                    }
+                },
+                auditors: {
                     select: {
                         id: true,
                         firstName: true,

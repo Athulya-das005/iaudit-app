@@ -121,12 +121,16 @@ const CreateAuditPlanPage = () => {
                 const response = await fetch(`${API_BASE_URL}/api/users?creatorId=${user.id}`);
                 if (response.ok) {
                     const data = await response.json();
-                    if (Array.isArray(data)) {
-                        setUsers(data);
-                    } else {
-                        console.error("Users data is not an array:", data);
-                        setUsers([]);
+                    let usersList = Array.isArray(data) ? data : [];
+
+                    // Add current user if not in list
+                    if (user && user.id) {
+                        const exists = usersList.some((u: any) => u.id === user.id);
+                        if (!exists) {
+                            usersList.unshift(user);
+                        }
                     }
+                    setUsers(usersList);
                 }
             } catch (error) {
                 console.error("Failed to fetch users", error);
@@ -162,10 +166,13 @@ const CreateAuditPlanPage = () => {
             setAuditCriteria(existingPlan.criteria || "");
 
             if (existingPlan.leadAuditorId) setLeadAuditorId(existingPlan.leadAuditorId.toString());
+            else if (existingPlan.leadAuditor?.id) setLeadAuditorId(existingPlan.leadAuditor.id.toString());
+
             if (existingPlan.auditors && existingPlan.auditors.length > 0) {
-                // If the auditors field is a JSON string it needs to be parsed, but typically it is populated as objects or ids
                 const firstAuditor = existingPlan.auditors[0];
                 setSelectedAuditorId(typeof firstAuditor === 'object' ? firstAuditor.id?.toString() : firstAuditor.toString());
+            } else if (existingPlan.auditorIds && existingPlan.auditorIds.length > 0) {
+                setSelectedAuditorId(existingPlan.auditorIds[0].toString());
             }
 
             if (existingPlan.itinerary) {
@@ -218,6 +225,8 @@ const CreateAuditPlanPage = () => {
                 if (program.auditors && program.auditors.length > 0) {
                     const firstAuditor = program.auditors[0];
                     setSelectedAuditorId(typeof firstAuditor === 'object' ? firstAuditor.id?.toString() : firstAuditor.toString());
+                } else if (program.auditorIds && program.auditorIds.length > 0) {
+                    setSelectedAuditorId(program.auditorIds[0].toString());
                 }
 
                 // Auto-select template based on ISO Standard
