@@ -98,9 +98,12 @@ app.get('/api/admin/upgrade-db', (req, res) => {
 // Example route to get all companies (including sites and departments)
 app.get('/api/companies', async (req, res) => {
     const { userId } = req.query;
+    console.log(`[DEBUG] GET /api/companies called with userId: ${userId}`);
     try {
-        const parsedUserId = userId ? parseInt(userId) : null;
+        const parsedUserId = userId && userId !== 'undefined' && userId !== 'null' ? parseInt(userId) : null;
         const whereClause = parsedUserId ? { userId: parsedUserId } : {};
+        console.log(`[DEBUG] Querying companies with whereClause:`, whereClause);
+
         const companies = await prisma.company.findMany({
             where: whereClause,
             include: {
@@ -112,6 +115,8 @@ app.get('/api/companies', async (req, res) => {
                 }
             }
         });
+
+        console.log(`[DEBUG] Successfully fetched ${companies.length} companies.`);
         res.json(companies);
     } catch (error) {
         console.error('Failed to fetch companies. Check if DB schema is up-to-date (e.g. missing userId on Site):', error);
