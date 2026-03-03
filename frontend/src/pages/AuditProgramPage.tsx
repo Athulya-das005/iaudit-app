@@ -85,7 +85,7 @@ const AuditProgramPage = () => {
     const [auditPlans, setAuditPlans] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState<"card" | "list">("card");
-    const [activeSiteId, setActiveSiteId] = useState<string>("all");
+    const [activeSiteId, setActiveSiteId] = useState<string>("");
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -103,6 +103,11 @@ const AuditProgramPage = () => {
                 setSites(sitesData);
                 setAuditPrograms(programsData);
                 setAuditPlans(plansData);
+
+                // Set first site as default if activeSiteId is not set
+                if (sitesData.length > 0) {
+                    setActiveSiteId(sitesData[0].id.toString());
+                }
             } catch (error) {
                 console.error("Failed to fetch data:", error);
                 toast.error("Failed to load data");
@@ -484,14 +489,9 @@ const AuditProgramPage = () => {
                 </div>
 
                 {sites.length > 0 && (
-                    <Tabs defaultValue="all" value={activeSiteId} onValueChange={setActiveSiteId} className="w-full">
+                    <Tabs value={activeSiteId} onValueChange={setActiveSiteId} className="w-full">
                         <TabsList className="bg-transparent h-auto p-0 flex gap-8 border-b border-slate-200 w-full justify-start rounded-none">
-                            <TabsTrigger
-                                value="all"
-                                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#34967C] data-[state=active]:bg-transparent data-[state=active]:text-[#34967C] px-0 pb-2 text-base font-semibold text-slate-500 hover:text-slate-700 transition-all shadow-none"
-                            >
-                                All Sites
-                            </TabsTrigger>
+
                             {sites.map(site => (
                                 <TabsTrigger
                                     key={site.id}
@@ -509,7 +509,7 @@ const AuditProgramPage = () => {
                     <div className="space-y-8 relative z-10">
                         {(() => {
                             const allExecutions = auditPrograms
-                                .filter(p => activeSiteId === "all" || p.siteId.toString() === activeSiteId)
+                                .filter(p => p.siteId.toString() === activeSiteId)
                                 .flatMap(p => {
                                     const site = sites.find(s => s.id === p.siteId);
                                     const executions = getAuditExecutions(p);
