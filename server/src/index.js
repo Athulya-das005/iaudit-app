@@ -445,7 +445,7 @@ const sendOtpLogic = async (req, res) => {
         } else if (error.message.includes('Invalid login') || error.message.includes('EAUTH')) {
             console.error('HINT: Email authentication failed. Check your SMTP/Gmail credentials.');
         }
-  
+
         res.status(500).json({
             error: `Failed during: ${step}`,
             message: error.message,
@@ -717,30 +717,66 @@ app.get('/api/audit-programs', async (req, res) => {
         const whereClause = userId ? { userId: parseInt(userId) } : {};
         const programs = await prisma.auditProgram.findMany({
             where: whereClause,
-            include: {
-                site: true,
-                auditors: {
+            select: {
+                id: true,
+                name: true,
+                isoStandard: true,
+                frequency: true,
+                duration: true,
+                status: true,
+                createdAt: true,
+                updatedAt: true,
+                siteId: true,
+                site: {
                     select: {
                         id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true
+                        name: true
                     }
                 },
                 leadAuditor: {
                     select: {
                         id: true,
                         firstName: true,
-                        lastName: true,
-                        email: true
+                        lastName: true
                     }
-                }
+                },
+                // For the list view, we only need a flag if schedule data exists
+                scheduleData: true
             }
         });
-        res.json(programs);
+        // Map to include a simple boolean for UI and strip full data to save bandwidth
+        const optimizedPrograms = programs.map(p => {
+            const isConfigured = p.scheduleData && typeof p.scheduleData === 'object' && Object.keys(p.scheduleData).length > 0;
+            const { scheduleData: _, ...programWithoutData } = p;
+            return {
+                ...programWithoutData,
+                isConfigured
+            };
+        });
+        res.json(optimizedPrograms);
     } catch (error) {
         console.error('Failed to fetch audit programs:', error);
         res.status(500).json({ error: 'Failed to fetch audit programs' });
+    }
+});
+
+// Get single Audit Program (Full Details)
+app.get('/api/audit-programs/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const program = await prisma.auditProgram.findUnique({
+            where: { id: parseInt(id) },
+            include: {
+                site: true,
+                auditors: true,
+                leadAuditor: true
+            }
+        });
+        if (!program) return res.status(404).json({ error: 'Audit program not found' });
+        res.json(program);
+    } catch (error) {
+        console.error('Failed to fetch audit program details:', error);
+        res.status(500).json({ error: 'Failed to fetch audit program details' });
     }
 });
 
@@ -841,6 +877,74 @@ app.get('/api/audit-plans', async (req, res) => {
         if (userId) whereClause.userId = parseInt(userId);
         const plans = await prisma.auditPlan.findMany({
             where: whereClause,
+            select: {
+                id: true,
+                executionId: true,
+                auditType: true,
+                auditName: true,
+                date: true,
+                location: true,
+                status: true, // If available
+                createdAt: true,
+                updatedAt: true,
+                templateId: true,
+                auditProgramId: true,
+                userId: true,
+                // We fetch auditData only to calculate progress on server
+                auditData: true,
+                leadAuditor: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true
+                    }
+                },
+                auditProgram: {
+                    select: {
+                        id: true,
+                        name: true,
+                        site: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        // Calculate progress on backend to reduce logic on frontend and keep it consistent
+        const optimizedPlans = plans.map(plan => {
+            let progress = 0;
+            if (plan.auditData) {
+                const data = typeof plan.auditData === 'string' ? JSON.parse(plan.auditData) : plan.auditData;
+                progress = data.progress ?? 0;
+            }
+            // Remove full auditData from the list response
+            const { auditData: _, ...planWithoutData } = plan;
+            return {
+                ...planWithoutData,
+                progress
+            };
+        });
+
+        res.json(optimizedPlans);
+    } catch (error) {
+        console.error('Failed to fetch audit plans:', error);
+        res.status(500).json({ error: 'Failed to fetch audit plans' });
+    }
+});
+
+// Get single Audit Plan (Full Details)
+app.get('/api/audit-plans/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const plan = await prisma.auditPlan.findUnique({
+            where: { id: parseInt(id) },
             include: {
                 leadAuditor: true,
                 auditors: true,
@@ -849,15 +953,13 @@ app.get('/api/audit-plans', async (req, res) => {
                         site: true
                     }
                 }
-            },
-            orderBy: {
-                createdAt: 'desc'
             }
         });
-        res.json(plans);
+        if (!plan) return res.status(404).json({ error: 'Audit plan not found' });
+        res.json(plan);
     } catch (error) {
-        console.error('Failed to fetch audit plans:', error);
-        res.status(500).json({ error: 'Failed to fetch audit plans' });
+        console.error('Failed to fetch audit plan details:', error);
+        res.status(500).json({ error: 'Failed to fetch audit plan details' });
     }
 });
 

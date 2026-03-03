@@ -27,6 +27,7 @@ model Company {
   userId         Int?
   user           User?    @relation("UserCompanies", fields: [userId], references: [id])
   sites          Site[]
+  @@index([userId])
 }
 
 model Site {
@@ -54,6 +55,8 @@ model Site {
   departments     Department[]
   company         Company        @relation(fields: [companyId], references: [id])
   user            User?          @relation("UserSites", fields: [userId], references: [id])
+  @@index([userId])
+  @@index([companyId])
 }
 
 model Department {
@@ -112,6 +115,8 @@ model AuditProgram {
   site          Site        @relation(fields: [siteId], references: [id])
   user          User?       @relation("UserAuditPrograms", fields: [userId], references: [id])
   auditors      User[]      @relation("AuditorPrograms")
+  @@index([userId])
+  @@index([siteId])
 }
 
 model AuditPlan {
@@ -139,6 +144,8 @@ model AuditPlan {
   auditors       User[]       @relation("PlanAuditors")
 
   @@unique([auditProgramId, executionId])
+  @@index([userId])
+  @@index([auditProgramId])
 }
 
 model Otp {

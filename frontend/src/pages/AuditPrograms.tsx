@@ -250,38 +250,64 @@ const AuditPrograms = () => {
         }
     };
 
-    const handleEditProgram = (program: any) => {
-        setCurrentId(program.id);
-        setAuditName(program.name);
-        setSelectedStandards(program.isoStandard ? program.isoStandard.split(', ') : []);
-        setFrequency(program.frequency);
-        setDuration(program.duration);
-        setSelectedSite(program.siteId.toString());
-        setSelectedAuditors(program.auditors.map((a: any) => a.id.toString()));
-        setLeadAuditorId(program.leadAuditorId?.toString() || null);
-        const loadData = program.scheduleData || {};
-        const { customRows: loadedCustomRows, ...restCells } = loadData;
-        setSelectedCells(restCells);
-        setCustomRows(loadedCustomRows || []);
-        setShowSchedule(true);
-        setView("edit");
+    const handleEditProgram = async (program: any) => {
+        const loadingToast = toast.loading("Fetching program details...");
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/audit-programs/${program.id}`);
+            if (!res.ok) throw new Error("Failed to fetch details");
+            const fullProgram = await res.json();
+
+            setCurrentId(fullProgram.id);
+            setAuditName(fullProgram.name);
+            setSelectedStandards(fullProgram.isoStandard ? fullProgram.isoStandard.split(', ') : []);
+            setFrequency(fullProgram.frequency);
+            setDuration(fullProgram.duration);
+            setSelectedSite(fullProgram.siteId.toString());
+            setSelectedAuditors(fullProgram.auditors?.map((a: any) => a.id.toString()) || []);
+            setLeadAuditorId(fullProgram.leadAuditorId?.toString() || null);
+
+            const loadData = fullProgram.scheduleData || {};
+            const { customRows: loadedCustomRows, ...restCells } = loadData;
+            setSelectedCells(restCells);
+            setCustomRows(loadedCustomRows || []);
+            setShowSchedule(true);
+            setView("edit");
+            toast.dismiss(loadingToast);
+        } catch (error) {
+            console.error("Error fetching program details:", error);
+            toast.error("Failed to load program details");
+            toast.dismiss(loadingToast);
+        }
     };
 
-    const handleViewProgram = (program: any) => {
-        setCurrentId(program.id);
-        setAuditName(program.name);
-        setSelectedStandards(program.isoStandard ? program.isoStandard.split(', ') : []);
-        setFrequency(program.frequency);
-        setDuration(program.duration);
-        setSelectedSite(program.siteId.toString());
-        setSelectedAuditors(program.auditors.map((a: any) => a.id.toString()));
-        setLeadAuditorId(program.leadAuditorId?.toString() || null);
-        const loadData = program.scheduleData || {};
-        const { customRows: loadedCustomRows, ...restCells } = loadData;
-        setSelectedCells(restCells);
-        setCustomRows(loadedCustomRows || []);
-        setShowSchedule(true);
-        setView("view");
+    const handleViewProgram = async (program: any) => {
+        const loadingToast = toast.loading("Loading program details...");
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/audit-programs/${program.id}`);
+            if (!res.ok) throw new Error("Failed to fetch details");
+            const fullProgram = await res.json();
+
+            setCurrentId(fullProgram.id);
+            setAuditName(fullProgram.name);
+            setSelectedStandards(fullProgram.isoStandard ? fullProgram.isoStandard.split(', ') : []);
+            setFrequency(fullProgram.frequency);
+            setDuration(fullProgram.duration);
+            setSelectedSite(fullProgram.siteId.toString());
+            setSelectedAuditors(fullProgram.auditors?.map((a: any) => a.id.toString()) || []);
+            setLeadAuditorId(fullProgram.leadAuditorId?.toString() || null);
+
+            const loadData = fullProgram.scheduleData || {};
+            const { customRows: loadedCustomRows, ...restCells } = loadData;
+            setSelectedCells(restCells);
+            setCustomRows(loadedCustomRows || []);
+            setShowSchedule(true);
+            setView("view");
+            toast.dismiss(loadingToast);
+        } catch (error) {
+            console.error("Error fetching program details:", error);
+            toast.error("Failed to load program details");
+            toast.dismiss(loadingToast);
+        }
     };
 
     const resetForm = () => {
@@ -623,41 +649,29 @@ const AuditPrograms = () => {
             }
         });
 
-        const children: any[] = [];
-
-        // Add Logo if available
-        if (logoBuffer) {
-            children.push(new Paragraph({
-                children: [
-                    new ImageRun({
-                        data: logoBuffer,
-                        transformation: {
-                            width: 80,
-                            height: 80,
-                        },
-                    }),
-                ],
-                spacing: { after: 200 }
-            }));
-        }
-
-        children.push(
-            new Paragraph({
-                text: "Audit Program Schedule",
-                heading: HeadingLevel.HEADING_1,
-                spacing: { after: 200 }
-            }),
-            new Paragraph({ text: `Program Name: ${program.name}` }),
-            new Paragraph({ text: `Standard: ${program.isoStandard}` }),
-            new Paragraph({ text: `Frequency: ${program.frequency}` }),
-            new Paragraph({ text: `Site: ${program.site?.name || "N/A"}`, spacing: { after: 400 } }),
-            table
-        );
+        const getChildren = () => {
+            const children: any[] = [];
+            if (logoBuffer) {
+                children.push(new Paragraph({
+                    children: [new ImageRun({ data: logoBuffer, transformation: { width: 80, height: 80 } })],
+                    spacing: { after: 200 }
+                }));
+            }
+            children.push(
+                new Paragraph({ text: "Audit Program Schedule", heading: HeadingLevel.HEADING_1, spacing: { after: 200 } }),
+                new Paragraph({ text: `Program Name: ${program.name}` }),
+                new Paragraph({ text: `Standard: ${program.isoStandard}` }),
+                new Paragraph({ text: `Frequency: ${program.frequency}` }),
+                new Paragraph({ text: `Site: ${program.site?.name || "N/A"}`, spacing: { after: 400 } }),
+                table
+            );
+            return children;
+        };
 
         const doc = new Document({
             sections: [{
                 properties: {},
-                children: children,
+                children: getChildren(),
             }],
         });
 
@@ -773,7 +787,7 @@ const AuditPrograms = () => {
                                                 <TableCell className="text-sm text-foreground font-medium">{program.site?.name || "N/A"}</TableCell>
                                                 <TableCell className="text-center font-bold text-emerald-600">
                                                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                                                        {Object.keys(program.scheduleData || {}).length > 0 ? "Configured" : "Not Set"}
+                                                        {program.isConfigured ? "Configured" : "Not Set"}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="text-right pr-6">

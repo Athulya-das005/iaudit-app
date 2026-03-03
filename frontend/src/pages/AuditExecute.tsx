@@ -211,10 +211,9 @@ const AuditExecute = () => {
       if (!id) return;
       setIsRefreshing(true);
       try {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
-        const res = await fetch(`${API_BASE_URL}/api/audit-plans?userId=${user.id}`);
-        const allPlans = await res.json();
-        const found = allPlans.find((p: any) => p.id === parseInt(id));
+        const res = await fetch(`${API_BASE_URL}/api/audit-plans/${id}`);
+        if (!res.ok) throw new Error("Plan not found");
+        const found = await res.json();
         if (found) {
           setCurrentPlan(found);
           if (found.auditData) {

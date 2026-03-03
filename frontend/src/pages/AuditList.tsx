@@ -463,12 +463,8 @@ const AuditList = () => {
     };
 
     const getProgress = (plan: any) => {
-        // Read the actual saved progress from auditData
-        if (plan.auditData) {
-            const data = typeof plan.auditData === 'string' ? JSON.parse(plan.auditData) : plan.auditData;
-            return data.progress ?? 0;
-        }
-        return 0;
+        // Use pre-calculated progress from backend for speed
+        return plan.progress ?? 0;
     };
 
     const uniqueSites = React.useMemo(() => {
