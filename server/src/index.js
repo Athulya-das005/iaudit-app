@@ -445,7 +445,7 @@ const sendOtpLogic = async (req, res) => {
         } else if (error.message.includes('Invalid login') || error.message.includes('EAUTH')) {
             console.error('HINT: Email authentication failed. Check your SMTP/Gmail credentials.');
         }
-
+  
         res.status(500).json({
             error: `Failed during: ${step}`,
             message: error.message,

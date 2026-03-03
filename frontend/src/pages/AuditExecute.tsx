@@ -727,7 +727,7 @@ const AuditExecute = () => {
       return y;
     };
 
-    // ---- Try to load logo ----
+    // ---- Try to load logo - compressed via canvas to prevent huge file sizes ----
     let logoDataUrl: string | null = null;
     let logoRatio = 0.3;
     try {
@@ -735,11 +735,21 @@ const AuditExecute = () => {
         const img = new Image();
         img.src = '/iAudit Global-01.png';
         img.onload = () => {
+          const MAX = 120;
           const canvas = document.createElement('canvas');
-          canvas.width = img.width; canvas.height = img.height;
-          canvas.getContext('2d')?.drawImage(img, 0, 0);
-          logoDataUrl = canvas.toDataURL('image/png');
-          logoRatio = img.height / img.width;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+            else { width = Math.round(width * MAX / height); height = MAX; }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          logoDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          logoRatio = height / width;
           resolve();
         };
         img.onerror = () => resolve();
@@ -1120,12 +1130,54 @@ const AuditExecute = () => {
     const leadName = plan.leadAuditor
       ? `${plan.leadAuditor.firstName} ${plan.leadAuditor.lastName}`
       : (plan.leadAuditorName || '—');
+
     const auditees = Array.isArray(plan.auditees)
       ? plan.auditees.map((a: any) => typeof a === 'string' ? a : `${a.firstName || ''} ${a.lastName || ''}`.trim()).join(', ')
       : (plan.auditees || '—');
 
+    // --- Logo - compressed via canvas to prevent huge file sizes ---
+    let logoBuffer: ArrayBuffer | null = null;
+    try {
+      const response = await fetch('/iAudit Global-01.png');
+      const blob = await response.blob();
+      logoBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 120;
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+            else { width = Math.round(width * MAX / height); height = MAX; }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d")!;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((compressedBlob) => {
+            if (compressedBlob) compressedBlob.arrayBuffer().then(resolve).catch(reject);
+            else reject(new Error("Canvas toBlob returned null"));
+          }, "image/jpeg", 0.6);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(blob);
+      });
+    } catch (e) {
+      console.warn("Logo could not be loaded for DOCX", e);
+    }
+
+    const sectionGreen = '0EA572';
     const content: any[] = [
       // Cover
+      ...(logoBuffer ? [
+        new Paragraph({
+          children: [new ImageRun({ data: logoBuffer, transformation: { width: 80, height: 60 } })],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 200 }
+        })
+      ] : []),
       new Paragraph({ text: 'Audit Report', heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }),
       new Paragraph({ text: plan.auditName || '', alignment: AlignmentType.CENTER }),
       new Paragraph({ text: `Generated: ${new Date().toLocaleDateString()}`, alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
