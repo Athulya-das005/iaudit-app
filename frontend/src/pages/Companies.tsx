@@ -467,6 +467,7 @@ const CompaniesPage = () => {
               <span className="text-black font-medium">Dashboard</span>
             </div>
           </div>
+          {/* Create Company explicitly hidden if user already has a company registered */}
           {companies.length === 0 && (
             <Button onClick={() => setShowCreateCompany(true)} className="gap-2 shadow-sm font-semibold bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl px-5 h-11">
               <Plus className="h-4 w-4" /> Create Company

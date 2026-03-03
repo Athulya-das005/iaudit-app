@@ -300,6 +300,18 @@ app.post('/api/companies', async (req, res) => {
         state, country, postalCode, standards, userId
     } = req.body;
     try {
+        const parsedUserId = userId ? parseInt(userId) : null;
+
+        // Enforce One Company Per User Rule
+        if (parsedUserId) {
+            const existingCompany = await prisma.company.findFirst({
+                where: { userId: parsedUserId }
+            });
+            if (existingCompany) {
+                return res.status(400).json({ error: 'User already has a registered company. Only one company is allowed per user.' });
+            }
+        }
+
         const company = await prisma.company.create({
             data: {
                 name,
@@ -316,7 +328,7 @@ app.post('/api/companies', async (req, res) => {
                 // Automatically set legacy fields for compatibility
                 location: `${city || ''}, ${country || ''}`.trim().replace(/^, |,$/, ''),
                 contactDetails: contactNumber,
-                userId: userId ? parseInt(userId) : null
+                userId: parsedUserId
             },
         });
         res.status(201).json(company);
