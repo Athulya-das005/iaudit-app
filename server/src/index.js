@@ -31,7 +31,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Cache Control middleware to prevent stale API responses on AWS/Netlify
+// Prevent caching for API routes to fix AWS caching issue where companies/sites disappear on refresh
 app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -116,8 +116,8 @@ app.post('/api/companies/:companyId/sites', async (req, res) => {
                 state,
                 country,
                 postalCode,
-                latitude: (latitude && latitude !== "") ? parseFloat(latitude) : null,
-                longitude: (longitude && longitude !== "") ? parseFloat(longitude) : null,
+                latitude: latitude != null && String(latitude).trim() !== '' && !isNaN(parseFloat(latitude)) ? parseFloat(latitude) : null,
+                longitude: longitude != null && String(longitude).trim() !== '' && !isNaN(parseFloat(longitude)) ? parseFloat(longitude) : null,
                 contactName,
                 contactPosition,
                 contactNumber,
@@ -173,8 +173,8 @@ app.put('/api/sites/:id', async (req, res) => {
                 state,
                 country,
                 postalCode,
-                latitude: (latitude && latitude !== "") ? parseFloat(latitude) : null,
-                longitude: (longitude && longitude !== "") ? parseFloat(longitude) : null,
+                latitude: latitude != null && String(latitude).trim() !== '' && !isNaN(parseFloat(latitude)) ? parseFloat(latitude) : null,
+                longitude: longitude != null && String(longitude).trim() !== '' && !isNaN(parseFloat(longitude)) ? parseFloat(longitude) : null,
                 contactName,
                 contactPosition,
                 contactNumber,
