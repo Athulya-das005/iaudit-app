@@ -70,8 +70,8 @@ export default function CompanyModal({ open, onClose, onSubmit, initialData, mod
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1024 * 1024) {
-        setError("Logo must be less than 1MB");
+      if (file.size > 10 * 1024 * 1024) {
+        setError("Logo must be less than 10MB");
         return;
       }
       const reader = new FileReader();
@@ -153,7 +153,7 @@ export default function CompanyModal({ open, onClose, onSubmit, initialData, mod
             </div>
             <div className="flex-1 space-y-2">
               <h4 className="font-medium text-sm">Company Logo</h4>
-              <p className="text-xs text-muted-foreground">Upload your company logo (PNG, JPG, max 1MB).</p>
+              <p className="text-xs text-muted-foreground">Upload your company logo (PNG, JPG, max 10MB).</p>
               <Label
                 htmlFor="logo-upload"
                 className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 cursor-pointer"
