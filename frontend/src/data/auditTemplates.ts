@@ -60,6 +60,7 @@ export interface AuditTemplate {
     type: TemplateType;
     description: string;
     isIntegrated?: boolean;
+    isTripleMapping?: boolean;
     content: SectionContent[] | ChecklistContent[] | ClauseChecklistContent[] | ProcessAuditContent[];
 }
 
@@ -344,11 +345,12 @@ export const auditTemplates: AuditTemplate[] = [
     },
     {
         id: "integrated-audit-checklist",
-        title: "ISO 9001 & 14001 Integrated Audit Checklist",
+        title: "IMS Integrated Audit Checklist (ISO 9001, 14001, 45001)",
         standard: "ISO 9001",
         isIntegrated: true,
+        isTripleMapping: true,
         type: "checklist",
-        description: "EQMS Integrated Audit Checklist covering both ISO 9001 and ISO 14001 requirements.",
+        description: "IMS Integrated Audit Checklist covering ISO 9001, ISO 14001 and ISO 45001 requirements mapping.",
         content: [
             {
                 clause: "4.1",

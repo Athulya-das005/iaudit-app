@@ -235,18 +235,18 @@ export default function Users() {
     return (
         <div className="h-full bg-white">
             <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 px-4 sm:px-0">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Users</h1>
                         <p className="text-sm text-muted-foreground mt-0.5">Manage system users, their roles and access status</p>
                     </div>
-                    <Button onClick={() => openModal("create")} size="sm" className="gap-1.5 shadow-sm bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl px-5 h-11">
+                    <Button onClick={() => openModal("create")} size="sm" className="w-full sm:w-auto gap-1.5 shadow-sm bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl px-5 h-11">
                         <UserPlus className="h-4 w-4" /> Create User
                     </Button>
                 </div>
 
                 {/* Filters Row */}
-                <div className="flex flex-col md:flex-row gap-4 mb-6">
+                <div className="flex flex-col lg:flex-row gap-4 mb-6 px-4 sm:px-0">
                     <div className="relative flex-1">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -256,9 +256,9 @@ export default function Users() {
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
-                    <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
                         <Select value={roleFilter} onValueChange={setRoleFilter}>
-                            <SelectTrigger className="w-[180px] h-12 rounded-2xl border-slate-200 bg-white shadow-sm hover:border-slate-300 focus:ring-[#213847]/40">
+                            <SelectTrigger className="w-full sm:w-[180px] h-12 rounded-2xl border-slate-200 bg-white shadow-sm hover:border-slate-300 focus:ring-[#213847]/40">
                                 <SelectValue placeholder="All Roles" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-slate-200 shadow-lg">
@@ -270,7 +270,7 @@ export default function Users() {
                         </Select>
 
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="w-[180px] h-12 rounded-2xl border-slate-200 bg-white shadow-sm hover:border-slate-300 focus:ring-[#213847]/40">
+                            <SelectTrigger className="w-full sm:w-[180px] h-12 rounded-2xl border-slate-200 bg-white shadow-sm hover:border-slate-300 focus:ring-[#213847]/40">
                                 <SelectValue placeholder="All Status" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-slate-200 shadow-lg">
@@ -283,116 +283,118 @@ export default function Users() {
                 </div>
 
                 {/* User List Table */}
-                <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="bg-[#213847] hover:bg-[#213847] border-none">
-                                <TableHead className="w-[80px] text-white pl-6">SL No.</TableHead>
-                                <TableHead className="text-white">Name</TableHead>
-                                <TableHead className="text-white">Email</TableHead>
-                                <TableHead className="text-white">Role</TableHead>
-                                <TableHead className="text-white">Status</TableHead>
-                                <TableHead className="text-white">Created At</TableHead>
-                                <TableHead className="text-right text-white">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                <TableRow>
-                                    <TableCell colSpan={7} className="h-24 text-center">
-                                        Loading users...
-                                    </TableCell>
+                <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden mx-4 sm:mx-0">
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-[#213847] hover:bg-[#213847] border-none">
+                                    <TableHead className="w-[80px] text-white pl-6">SL No.</TableHead>
+                                    <TableHead className="text-white">Name</TableHead>
+                                    <TableHead className="text-white">Email</TableHead>
+                                    <TableHead className="text-white">Role</TableHead>
+                                    <TableHead className="text-white">Status</TableHead>
+                                    <TableHead className="text-white">Created At</TableHead>
+                                    <TableHead className="text-right text-white">Action</TableHead>
                                 </TableRow>
-                            ) : filteredUsers.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={7} className="h-64 text-center">
-                                        <div className="flex flex-col items-center justify-center py-10">
-                                            <UserIcon className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                                            <p className="text-sm text-muted-foreground">No users found</p>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                paginatedUsers.map((user, index) => (
-                                    <TableRow key={user.id} className="group hover:bg-muted/50 transition-colors">
-                                        <TableCell className="pl-6 font-medium text-muted-foreground">
-                                            {(currentPage - 1) * itemsPerPage + index + 1}
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center">
-                                                <span className="font-bold text-sm text-[#213847]">{user.firstName} {user.lastName}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <span className="text-xs text-[#213847]/80 flex items-center gap-1 font-medium">
-                                                <Mail className="h-3 w-3" /> {user.email}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant="secondary" className="font-medium capitalize py-0 px-2 h-6 flex w-fit items-center gap-1">
-                                                <Shield className="h-3 w-3" />
-                                                {user.role === "other" ? user.customRoleName : user.role}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                variant={user.isActive ? "default" : "outline"}
-                                                className={user.isActive ? "bg-[#e6f7e9] hover:bg-[#d4f2da] text-[#22a04c] border-none px-4 py-1 rounded-full shadow-none font-medium" : "text-muted-foreground px-4 py-1 rounded-full font-medium"}
-                                            >
-                                                {user.isActive ? "Active" : "Inactive"}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground text-sm">
-                                            {new Date(user.createdAt).toLocaleDateString()}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" type="button">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                        <span className="sr-only">Open menu</span>
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-[180px]">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem onClick={() => openModal("view", user)} className="cursor-pointer">
-                                                        <Eye className="h-4 w-4 mr-2" /> View Details
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => openModal("edit", user)} className="cursor-pointer">
-                                                        <Edit2 className="h-4 w-4 mr-2" /> Edit User
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleToggleStatus(user)}
-                                                        className="cursor-pointer font-medium"
-                                                    >
-                                                        {user.isActive ? (
-                                                            <>
-                                                                <UserMinus className="h-4 w-4 mr-2 text-orange-500" />
-                                                                <span className="text-orange-500">Make Inactive</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <UserCheck className="h-4 w-4 mr-2 text-emerald-500" />
-                                                                <span className="text-emerald-500">Make Active</span>
-                                                            </>
-                                                        )}
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
-                                                        onClick={() => triggerDelete(user)}
-                                                        className="text-destructive focus:text-destructive cursor-pointer"
-                                                    >
-                                                        <Trash2 className="h-4 w-4 mr-2" /> Delete User
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="h-24 text-center">
+                                            Loading users...
                                         </TableCell>
                                     </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
+                                ) : filteredUsers.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="h-64 text-center">
+                                            <div className="flex flex-col items-center justify-center py-10">
+                                                <UserIcon className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                                                <p className="text-sm text-muted-foreground">No users found</p>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    paginatedUsers.map((user, index) => (
+                                        <TableRow key={user.id} className="group hover:bg-muted/50 transition-colors">
+                                            <TableCell className="pl-6 font-medium text-muted-foreground">
+                                                {(currentPage - 1) * itemsPerPage + index + 1}
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center">
+                                                    <span className="font-bold text-sm text-[#213847]">{user.firstName} {user.lastName}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <span className="text-xs text-[#213847]/80 flex items-center gap-1 font-medium">
+                                                    <Mail className="h-3 w-3" /> {user.email}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge variant="secondary" className="font-medium capitalize py-0 px-2 h-6 flex w-fit items-center gap-1">
+                                                    <Shield className="h-3 w-3" />
+                                                    {user.role === "other" ? user.customRoleName : user.role}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge
+                                                    variant={user.isActive ? "default" : "outline"}
+                                                    className={user.isActive ? "bg-[#e6f7e9] hover:bg-[#d4f2da] text-[#22a04c] border-none px-4 py-1 rounded-full shadow-none font-medium" : "text-muted-foreground px-4 py-1 rounded-full font-medium"}
+                                                >
+                                                    {user.isActive ? "Active" : "Inactive"}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground text-sm">
+                                                {new Date(user.createdAt).toLocaleDateString()}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" type="button">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                            <span className="sr-only">Open menu</span>
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-[180px]">
+                                                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem onClick={() => openModal("view", user)} className="cursor-pointer">
+                                                            <Eye className="h-4 w-4 mr-2" /> View Details
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => openModal("edit", user)} className="cursor-pointer">
+                                                            <Edit2 className="h-4 w-4 mr-2" /> Edit User
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onClick={() => handleToggleStatus(user)}
+                                                            className="cursor-pointer font-medium"
+                                                        >
+                                                            {user.isActive ? (
+                                                                <>
+                                                                    <UserMinus className="h-4 w-4 mr-2 text-orange-500" />
+                                                                    <span className="text-orange-500">Make Inactive</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <UserCheck className="h-4 w-4 mr-2 text-emerald-500" />
+                                                                    <span className="text-emerald-500">Make Active</span>
+                                                                </>
+                                                            )}
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem
+                                                            onClick={() => triggerDelete(user)}
+                                                            className="text-destructive focus:text-destructive cursor-pointer"
+                                                        >
+                                                            <Trash2 className="h-4 w-4 mr-2" /> Delete User
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </div>
 
                 {/* Pagination */}

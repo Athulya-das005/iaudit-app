@@ -1027,6 +1027,57 @@ const AuditExecute = () => {
         });
         y = (doc as any).lastAutoTable.finalY + 10;
       }
+    } else if (template.isTripleMapping) {
+      y = section('8. INTEGRATED AUDIT MAPPING (ISO 9001, 14001, 45001)', y);
+      const rows: any[] = [];
+      const lblStyle = { fillColor: darkColor as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8, cellPadding: 3 };
+
+      CLAUSE_MATRIX.forEach((row, idx) => {
+        if (!isClauseSelected(row.id)) return;
+        const d = (checklistData[idx] || {}) as any;
+
+        if (row.isHeading) {
+          rows.push([{ content: `${row.iso45001} / ${row.iso14001} / ${row.iso9001}`, colSpan: 5, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+          return;
+        }
+
+        if (!d.findings) return;
+
+        // Main row
+        rows.push([row.iso45001, row.iso14001, row.iso9001, d.findings, d.evidence || '—']);
+
+        // NC details
+        if (d.findings !== 'C') {
+          if (d.description?.trim()) rows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.correction?.trim()) rows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.rootCause?.trim()) rows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.correctiveAction?.trim()) rows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
+        }
+      });
+
+      if (rows.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No findings recorded yet.', margin, y); y += 12;
+      } else {
+        autoTable(doc, {
+          startY: y,
+          head: [['ISO 45001', 'ISO 14001', 'ISO 9001', 'Finding', 'Evidence']],
+          body: rows,
+          theme: 'grid',
+          styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+          columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 35 }, 2: { cellWidth: 35 }, 3: { cellWidth: 15 }, 4: { cellWidth: 'auto' } },
+          headStyles: { fillColor: darkColor },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 3) {
+              const f = String(data.cell.raw || '');
+              if (f === 'C') data.cell.styles.textColor = [16, 185, 129];
+              else if (f === 'OFI') data.cell.styles.textColor = [245, 158, 11];
+              else if (f === 'Min' || f === 'Maj') data.cell.styles.textColor = [239, 68, 68];
+            }
+          }
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
     }
 
     // ---- 9. Evidence & Images ----
@@ -1071,6 +1122,19 @@ const AuditExecute = () => {
         rows.push({
           "Clause": item.clause,
           "Question": item.question,
+          "Finding": data.findings,
+          "Evidence": data.evidence
+        });
+      });
+    } else if (template.isTripleMapping) {
+      CLAUSE_MATRIX.forEach((row, idx) => {
+        if (!isClauseSelected(row.id)) return;
+        if (row.isHeading) return;
+        const data = (checklistData[idx] || {}) as any;
+        rows.push({
+          "ISO 45001": row.iso45001,
+          "ISO 14001": row.iso14001,
+          "ISO 9001": row.iso9001,
           "Finding": data.findings,
           "Evidence": data.evidence
         });
@@ -1337,6 +1401,47 @@ const AuditExecute = () => {
         content.push(new Paragraph({ children: [new TextRun({ text: 'No process audits recorded yet.', size: 20, color: '888888' })] }));
       } else {
         content.push(tbl(['Process Area', 'Auditees', 'Evidence', 'Conclusion', 'Finding'], filledPA.map(pa => [pa.processArea || '—', pa.auditees || '—', pa.evidence || '—', pa.conclusion || '—', (pa as any).findingType || '—'])));
+      }
+    } else if (template.isTripleMapping) {
+      content.push(makeHeader('8. INTEGRATED AUDIT MAPPING (ISO 9001, 14001, 45001)'));
+      const filledRows = CLAUSE_MATRIX
+        .map((row, idx) => ({ row, idx, d: (checklistData[idx] || {}) as any }))
+        .filter(({ row, d }) => isClauseSelected(row.id) && (d.findings || row.isHeading));
+
+      if (filledRows.length === 0) {
+        content.push(new Paragraph({ children: [new TextRun({ text: 'No findings recorded yet.', size: 20, color: '888888' })] }));
+      } else {
+        const makeBlueLabel = (label: string, value: string) =>
+          new DocxTableRow({
+            children: [
+              new DocxTableCell({ shading: { fill: darkFill }, children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, color: 'FFFFFF', size: 18 })] })] }),
+              new DocxTableCell({ columnSpan: 4, children: [new Paragraph({ children: [new TextRun({ text: value, size: 18 })] })] }),
+            ]
+          });
+
+        const tableRows: DocxTableRow[] = [makeRow(['ISO 45001', 'ISO 14001', 'ISO 9001', 'Finding', 'Evidence'], darkFill)];
+        for (const { row, d } of filledRows) {
+          if (row.isHeading) {
+            tableRows.push(new DocxTableRow({
+              children: [new DocxTableCell({
+                columnSpan: 5,
+                shading: { fill: 'F3F4F6' },
+                children: [new Paragraph({ children: [new TextRun({ text: `${row.iso45001} / ${row.iso14001} / ${row.iso9001}`, bold: true, size: 18 })] })]
+              })]
+            }));
+            continue;
+          }
+          if (!d.findings) continue;
+
+          tableRows.push(makeRow([row.iso45001, row.iso14001, row.iso9001, d.findings || '—', d.evidence || '—']));
+          if (d.findings !== 'C') {
+            if (d.description?.trim()) tableRows.push(makeBlueLabel('Details', d.description));
+            if (d.correction?.trim()) tableRows.push(makeBlueLabel('Correction', d.correction));
+            if (d.rootCause?.trim()) tableRows.push(makeBlueLabel('Root Cause', d.rootCause));
+            if (d.correctiveAction?.trim()) tableRows.push(makeBlueLabel('Corrective Action', d.correctiveAction));
+          }
+        }
+        content.push(new DocxTable({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: tableRows }));
       }
     }
     content.push(spacer());
@@ -3335,6 +3440,180 @@ const AuditExecute = () => {
               <Plus className="w-5 h-5" /> Add Another Audit Report Section
             </Button>
           </div>
+        ) : template.isTripleMapping ? (
+          <Card className="overflow-hidden border border-slate-200 shadow-sm bg-white rounded-xl">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-800 hover:bg-slate-800 border-none">
+                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
+                      ISO 45001:2018
+                    </TableHead>
+                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
+                      ISO 14001:2015
+                    </TableHead>
+                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
+                      ISO 9001:2015
+                    </TableHead>
+                    <TableHead className="w-[16%] font-bold text-white text-center border-r border-slate-700 text-xs uppercase tracking-wider">
+                      Finding
+                    </TableHead>
+                    <TableHead className="w-[30%] font-bold text-white text-center text-xs uppercase tracking-wider">
+                      Audit Evidence
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {CLAUSE_MATRIX.map((row, index) => {
+                    // Filter based on schedule if needed
+                    if (!isClauseSelected(row.id)) return null;
+
+                    const type = checklistData[index]?.findings;
+                    if (focusFindings && !['OFI', 'Min', 'Maj', 'C'].includes(type as string)) {
+                      return null;
+                    }
+
+                    if (row.isHeading) {
+                      return (
+                        <TableRow key={row.id} className="bg-[#213847] hover:bg-[#213847] border-none">
+                          <TableCell className="font-bold text-white text-xs py-3 border-r border-slate-700">{row.iso45001}</TableCell>
+                          <TableCell className="font-bold text-white text-xs py-3 border-r border-slate-700">{row.iso14001}</TableCell>
+                          <TableCell className="font-bold text-white text-xs py-3 border-r border-slate-700">{row.iso9001}</TableCell>
+                          <TableCell colSpan={2} className="bg-[#213847]"></TableCell>
+                        </TableRow>
+                      );
+                    }
+
+                    return (
+                      <React.Fragment key={row.id}>
+                        <TableRow className="divide-x divide-slate-100 bg-white hover:bg-slate-50/50 transition-colors">
+                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso45001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
+                            {row.iso45001}
+                          </TableCell>
+                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso14001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
+                            {row.iso14001}
+                          </TableCell>
+                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso9001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
+                            {row.iso9001}
+                          </TableCell>
+
+                          {/* Findings */}
+                          <TableCell className="p-3 align-top">
+                            <div className="flex flex-wrap gap-1.5 justify-center">
+                              {[
+                                { val: "C", color: "bg-emerald-500" },
+                                { val: "OFI", color: "bg-amber-500" },
+                                { val: "Min", color: "bg-orange-600" },
+                                { val: "Maj", color: "bg-red-600" },
+                              ].map((opt) => (
+                                <div
+                                  key={opt.val}
+                                  className={`
+                                    w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black cursor-pointer border transition-all shadow-sm
+                                    ${type === opt.val
+                                      ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200`
+                                      : "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                    }
+                                  `}
+                                  onClick={() => {
+                                    handleChecklistChange(index, "findings", opt.val);
+                                    handleChecklistChange(index, "clause", row.id);
+                                  }}
+                                >
+                                  {opt.val}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+
+                          {/* Evidence */}
+                          <TableCell className="p-2 align-top">
+                            <Textarea
+                              className="min-h-[80px] text-[11px] resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-none p-2"
+                              placeholder="Evidence..."
+                              value={checklistData[index]?.evidence || ""}
+                              onChange={(e) => handleChecklistChange(index, "evidence", e.target.value)}
+                            />
+                          </TableCell>
+                        </TableRow>
+
+                        {/* Extended findings for Mapping rows */}
+                        {["OFI", "Min", "Maj"].includes(type) && (
+                          <TableRow className="bg-slate-50 border-b-4 border-slate-200 text-sm">
+                            <TableCell colSpan={5} className="p-0">
+                              <div className="p-5 m-3 border bg-white rounded-xl shadow-sm border-slate-200">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[11px] font-bold text-slate-700">Description</Label>
+                                    <Textarea
+                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                      value={checklistData[index]?.description || ""}
+                                      onChange={(e) => handleChecklistChange(index, "description", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[11px] font-bold text-slate-700">Correction</Label>
+                                    <Textarea
+                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                      value={checklistData[index]?.correction || ""}
+                                      onChange={(e) => handleChecklistChange(index, "correction", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[11px] font-bold text-slate-700">Root Cause</Label>
+                                    <Textarea
+                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                      value={checklistData[index]?.rootCause || ""}
+                                      onChange={(e) => handleChecklistChange(index, "rootCause", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[11px] font-bold text-slate-700">Corrective Action</Label>
+                                    <Textarea
+                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                      value={checklistData[index]?.correctiveAction || ""}
+                                      onChange={(e) => handleChecklistChange(index, "correctiveAction", e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Action By</Label>
+                                    <Input
+                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                      value={checklistData[index]?.actionBy || ""}
+                                      onChange={(e) => handleChecklistChange(index, "actionBy", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Close Date</Label>
+                                    <Input
+                                      type="date"
+                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                      value={checklistData[index]?.closeDate || ""}
+                                      onChange={(e) => handleChecklistChange(index, "closeDate", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Assign To</Label>
+                                    <Input
+                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                      value={checklistData[index]?.assignTo || ""}
+                                      onChange={(e) => handleChecklistChange(index, "assignTo", e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         ) : (
           <Card className="overflow-hidden border border-slate-200 shadow-sm bg-white rounded-xl">
             <div className="overflow-x-auto">

@@ -108,16 +108,27 @@ app.get('/api/admin/upgrade-db', (req, res) => {
 app.get('/api/companies', async (req, res) => {
     const { userId } = req.query;
     console.log(`[DEBUG] GET /api/companies called with userId: ${userId}`);
+
+    // SECURITY: Enforce strict userId filtering. Do not return all companies if userId is missing.
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        console.warn(`[SECURITY] GET /api/companies called without valid userId. Returning empty list.`);
+        return res.json([]);
+    }
+
     try {
-        const parsedUserId = userId && userId !== 'undefined' && userId !== 'null' ? parseInt(userId) : null;
-        const whereClause = parsedUserId ? { userId: parsedUserId } : {};
+        const parsedUserId = parseInt(userId);
+        if (isNaN(parsedUserId)) {
+            return res.json([]);
+        }
+
+        const whereClause = { userId: parsedUserId };
         console.log(`[DEBUG] Querying companies with whereClause:`, whereClause);
 
         const companies = await prisma.company.findMany({
             where: whereClause,
             include: {
                 sites: {
-                    where: parsedUserId ? { userId: parsedUserId } : {},
+                    where: { userId: parsedUserId },
                     include: {
                         departments: true
                     }
@@ -125,10 +136,10 @@ app.get('/api/companies', async (req, res) => {
             }
         });
 
-        console.log(`[DEBUG] Successfully fetched ${companies.length} companies.`);
+        console.log(`[DEBUG] Successfully fetched ${companies.length} companies for userId ${parsedUserId}.`);
         res.json(companies);
     } catch (error) {
-        console.error('Failed to fetch companies. Check if DB schema is up-to-date (e.g. missing userId on Site):', error);
+        console.error('Failed to fetch companies:', error);
         res.status(500).json({ error: 'Failed to fetch companies', details: error.message || String(error) });
     }
 });
@@ -171,13 +182,23 @@ app.post('/api/companies/:companyId/sites', async (req, res) => {
     }
 });
 
-// Get all sites (with optional user filtering)
+// Get all sites (with strict user filtering for security)
 app.get('/api/sites', async (req, res) => {
     const { userId } = req.query;
+
+    // SECURITY: Enforce strict userId filtering. Do not return all sites if userId is missing.
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        return res.json([]);
+    }
+
     try {
-        const whereClause = userId ? { userId: parseInt(userId) } : {};
+        const parsedUserId = parseInt(userId);
+        if (isNaN(parsedUserId)) {
+            return res.json([]);
+        }
+
         const sites = await prisma.site.findMany({
-            where: whereClause,
+            where: { userId: parsedUserId },
             include: {
                 company: true
             }
@@ -713,10 +734,20 @@ app.delete('/api/users/:id', async (req, res) => {
 // Audit Program routes
 app.get('/api/audit-programs', async (req, res) => {
     const { userId } = req.query;
+
+    // SECURITY: Enforce strict userId filtering. Do not return all programs if userId is missing.
+    if (!userId || userId === 'undefined' || userId === 'null') {
+        return res.json([]);
+    }
+
     try {
-        const whereClause = userId ? { userId: parseInt(userId) } : {};
+        const parsedUserId = parseInt(userId);
+        if (isNaN(parsedUserId)) {
+            return res.json([]);
+        }
+
         const programs = await prisma.auditProgram.findMany({
-            where: whereClause,
+            where: { userId: parsedUserId },
             select: {
                 id: true,
                 name: true,

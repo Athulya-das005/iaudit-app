@@ -30,7 +30,12 @@ export function useCompanyStore() {
 
   const fetchCompanies = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const storedUser = localStorage.getItem('user');
+      if (!storedUser) return;
+
+      const user = JSON.parse(storedUser);
+      if (!user.id) return;
+
       const response = await fetch(`${API_URL}/companies?userId=${user.id}&_t=${Date.now()}`);
       if (response.ok) {
         const data = await response.json();

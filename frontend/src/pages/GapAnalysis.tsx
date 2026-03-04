@@ -312,16 +312,18 @@ const GapAnalysis = () => {
         <div className="flex-1 p-8 pt-6 min-h-screen bg-white">
             <div className="w-full max-w-[1800px] mx-auto space-y-8 animate-in fade-in duration-500">
                 {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 px-4 sm:px-0">
                     <div>
                         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Gap Analysis</h1>
                         <p className="text-sm text-muted-foreground mt-0.5">Conduct detailed compliance checks against ISO standards</p>
                     </div>
                     {/* Header Actions */}
                     {step === "list" && (
-                        <Button onClick={() => setStep("setup")} className="bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl h-10 px-4 font-medium shadow-sm transition-all duration-200">
-                            <Plus className="w-4 h-4 mr-2" /> New Analysis
-                        </Button>
+                        <div className="flex w-full sm:w-auto">
+                            <Button onClick={() => setStep("setup")} className="w-full sm:w-auto bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl h-10 px-4 font-medium shadow-sm transition-all duration-200">
+                                <Plus className="w-4 h-4 mr-2" /> New Analysis
+                            </Button>
+                        </div>
                     )}
                 </div>
 
@@ -329,7 +331,7 @@ const GapAnalysis = () => {
                 {step === "list" && (
                     <div className="space-y-6">
                         {/* Search and Filter */}
-                        <div className="flex flex-col md:flex-row gap-4">
+                        <div className="flex flex-col md:flex-row gap-4 px-4 sm:px-0">
                             <div className="relative flex-1 md:max-w-md">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                 <Input
@@ -464,12 +466,12 @@ const GapAnalysis = () => {
                             </Button>
 
                             <Card className="border-slate-200 shadow-sm rounded-xl animate-in fade-in slide-in-from-bottom-4 duration-500 mt-4">
-                                <CardHeader className="bg-[#213847] text-white rounded-t-xl p-8 border-b border-slate-100">
-                                    <CardTitle className="text-2xl text-white">Analysis Setup</CardTitle>
+                                <CardHeader className="bg-[#213847] text-white rounded-t-xl p-6 sm:p-8 border-b border-slate-100">
+                                    <CardTitle className="text-xl sm:text-2xl text-white">Analysis Setup</CardTitle>
                                     <CardDescription className="text-slate-300">Enter validation details.</CardDescription>
                                 </CardHeader>
-                                <CardContent className="space-y-6 p-8 bg-white rounded-b-xl">
-                                    <div className="grid grid-cols-2 gap-6">
+                                <CardContent className="space-y-6 p-6 sm:p-8 bg-white rounded-b-xl">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
                                             <Label className="text-sm font-semibold text-slate-700">Company Name <span className="text-red-500">*</span></Label>
                                             <Input
@@ -600,24 +602,24 @@ const GapAnalysis = () => {
                             </div>
 
                             {/* Tracker / Sticky Header */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 sticky top-4 z-10">
-                                <div className="flex justify-between items-center mb-4">
-                                    <div>
-                                        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200 sticky top-4 z-10">
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                                    <div className="flex-1">
+                                        <h2 className="text-base sm:text-lg font-bold text-slate-800 flex flex-wrap items-center gap-2">
                                             <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
                                                 {standard}
                                             </Badge>
-                                            <span className="text-slate-400">•</span>
-                                            {companyName}
+                                            <span className="hidden sm:inline text-slate-400">•</span>
+                                            <span className="truncate max-w-[200px] sm:max-w-none">{companyName}</span>
                                         </h2>
                                     </div>
-                                    <span className="text-sm font-medium text-slate-500">
+                                    <span className="text-xs sm:text-sm font-medium text-slate-500 whitespace-nowrap">
                                         Clause {currentClauseIndex + 1} of {uniqueClauses.length}
                                     </span>
                                 </div>
                                 <Progress value={((currentClauseIndex + 1) / uniqueClauses.length) * 100} className="h-2 bg-slate-100" />
-                                <div className="mt-4 flex justify-between items-center">
-                                    <h3 className="text-xl font-bold text-slate-900">{currentClause}</h3>
+                                <div className="mt-4">
+                                    <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">{currentClause}</h3>
                                 </div>
                             </div>
 
@@ -639,18 +641,18 @@ const GapAnalysis = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-col sm:flex-row items-center gap-2 min-w-[300px] justify-end">
+                                                <div className="flex flex-col lg:flex-row items-center gap-2 w-full lg:w-auto lg:min-w-[300px] justify-end">
                                                     {!q.finding ? (
-                                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider animate-pulse mr-2">Select Finding:</span>
+                                                        <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider animate-pulse lg:mr-2">Select Finding:</span>
                                                     ) : (
-                                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">Finding:</span>
+                                                        <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider lg:mr-2">Finding:</span>
                                                     )}
-                                                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                    <div className="flex w-full sm:w-auto bg-slate-100 p-1 rounded-lg">
                                                         <Button
                                                             size="sm"
                                                             variant={q.finding === "Comply" ? "default" : "ghost"}
                                                             className={cn(
-                                                                "flex-1 px-4 transition-all duration-200",
+                                                                "flex-1 px-2 sm:px-4 transition-all duration-200 h-8 sm:h-9",
                                                                 q.finding === "Comply"
                                                                     ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                                                                     : "text-slate-600 hover:text-emerald-700 hover:bg-emerald-50"
@@ -658,14 +660,14 @@ const GapAnalysis = () => {
                                                             onClick={() => handleAnswerChange(q.id, "finding", "Comply")}
                                                             title="Comply"
                                                         >
-                                                            <CheckCircle2 className={cn("w-4 h-4 mr-1.5", q.finding === "Comply" ? "text-white" : "text-emerald-600")} />
-                                                            <span className="font-medium">Comply</span>
+                                                            <CheckCircle2 className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5", q.finding === "Comply" ? "text-white" : "text-emerald-600")} />
+                                                            <span className="font-medium text-[11px] sm:text-sm">Comply</span>
                                                         </Button>
                                                         <Button
                                                             size="sm"
                                                             variant={q.finding === "OFI" ? "default" : "ghost"}
                                                             className={cn(
-                                                                "flex-1 px-4 transition-all duration-200",
+                                                                "flex-1 px-2 sm:px-4 transition-all duration-200 h-8 sm:h-9",
                                                                 q.finding === "OFI"
                                                                     ? "bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
                                                                     : "text-slate-600 hover:text-amber-700 hover:bg-amber-50"
@@ -673,14 +675,14 @@ const GapAnalysis = () => {
                                                             onClick={() => handleAnswerChange(q.id, "finding", "OFI")}
                                                             title="Opportunity for Improvement"
                                                         >
-                                                            <AlertCircle className={cn("w-4 h-4 mr-1.5", q.finding === "OFI" ? "text-white" : "text-amber-500")} />
-                                                            <span className="font-medium">OFI</span>
+                                                            <AlertCircle className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5", q.finding === "OFI" ? "text-white" : "text-amber-500")} />
+                                                            <span className="font-medium text-[11px] sm:text-sm">OFI</span>
                                                         </Button>
                                                         <Button
                                                             size="sm"
                                                             variant={q.finding === "NC" ? "default" : "ghost"}
                                                             className={cn(
-                                                                "flex-1 px-4 transition-all duration-200",
+                                                                "flex-1 px-2 sm:px-4 transition-all duration-200 h-8 sm:h-9",
                                                                 q.finding === "NC"
                                                                     ? "bg-red-600 hover:bg-red-700 text-white shadow-sm"
                                                                     : "text-slate-600 hover:text-red-700 hover:bg-red-50"
@@ -688,19 +690,21 @@ const GapAnalysis = () => {
                                                             onClick={() => handleAnswerChange(q.id, "finding", "NC")}
                                                             title="Non-Conformity"
                                                         >
-                                                            <XCircle className={cn("w-4 h-4 mr-1.5", q.finding === "NC" ? "text-white" : "text-red-600")} />
-                                                            <span className="font-medium">NC</span>
+                                                            <XCircle className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5", q.finding === "NC" ? "text-white" : "text-red-600")} />
+                                                            <span className="font-medium text-[11px] sm:text-sm">NC</span>
                                                         </Button>
                                                     </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => handleDeleteQuestion(q.id)}
-                                                        className="text-slate-400 hover:text-red-500 hover:bg-red-50 ml-1 rounded-full w-8 h-8"
-                                                        title="Delete Question"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
+                                                    <div className="hidden lg:block">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() => handleDeleteQuestion(q.id)}
+                                                            className="text-slate-400 hover:text-red-500 hover:bg-red-50 ml-1 rounded-full w-8 h-8"
+                                                            title="Delete Question"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </CardHeader>
