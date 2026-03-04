@@ -661,21 +661,38 @@ const CreateAuditPlanPage = () => {
                             <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
                                 <CardTitle className="flex items-center gap-2 text-base font-bold text-slate-700">
                                     <FileText className="w-4 h-4 text-emerald-500" />
-                                    Selected Clauses
+                                    Selected Audit Schedule
                                 </CardTitle>
                             </CardHeader>
-                            <CardContent className="p-6">
-                                <div className="flex flex-wrap gap-2">
-                                    {execution.clauses.map((clause: any) => (
-                                        <Badge key={clause.id} variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 py-1.5 px-3 flex items-center gap-1.5">
-                                            {clause.standard && (
-                                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1 rounded-sm shrink-0">
-                                                    {clause.standard}
-                                                </span>
-                                            )}
-                                            {clause.name}
-                                        </Badge>
-                                    ))}
+                            <CardContent className="p-6 bg-slate-50/30">
+                                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                    {(() => {
+                                        const groups = new Map<string, any[]>();
+                                        execution.clauses.forEach((clause: any) => {
+                                            const lastDashIndex = clause.id.lastIndexOf('-');
+                                            const baseId = lastDashIndex !== -1 ? clause.id.substring(0, lastDashIndex) : clause.id;
+                                            if (!groups.has(baseId)) groups.set(baseId, []);
+                                            groups.get(baseId)!.push(clause);
+                                        });
+                                        return Array.from(groups.values()).map((group, idx) => (
+                                            <Card key={idx} className="border border-slate-200 shadow-sm bg-white overflow-hidden group hover:shadow-md transition-all">
+                                                <div className="h-1 bg-emerald-500 w-0 group-hover:w-full transition-all duration-500" />
+                                                <CardContent className="p-4">
+                                                    <div className="text-[12px] font-bold text-slate-800 leading-tight">
+                                                        {group.map((clause: any) => {
+                                                            const label = clause.standard || "";
+                                                            return (
+                                                                <div key={clause.id} className="mb-2 pb-2 border-b border-slate-50 last:border-0 last:mb-0 last:pb-0">
+                                                                    {label && <span className="text-[9px] uppercase font-black text-emerald-600 mr-2 bg-emerald-50 px-1 py-0.5 rounded">{label}</span>}
+                                                                    <span className="text-slate-700 font-semibold">{clause.name}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        ));
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>
