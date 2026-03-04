@@ -21,7 +21,7 @@ export function useUserStatus() {
         } catch {
             // Corrupt data — log them out
             localStorage.removeItem("user");
-            navigate("/login", { replace: true });
+            window.location.href = '/login';
             return;
         }
 
@@ -36,7 +36,7 @@ export function useUserStatus() {
             // If user was deleted OR deactivated, log them out
             if (!data.exists || !data.isActive) {
                 localStorage.removeItem("user");
-                navigate("/login", { replace: true });
+                window.location.href = '/login';
             }
         } catch {
             // Network error: do not force logout to avoid disruping offline usage

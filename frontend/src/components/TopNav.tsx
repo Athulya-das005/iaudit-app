@@ -55,7 +55,7 @@ export function TopNav() {
   const handleLogout = () => {
     setIsOpen(false);
     localStorage.removeItem('user');
-    navigate('/login');
+    window.location.href = '/login';
   };
 
   const initials = `${user.firstName?.charAt(0) || ""}${user.lastName?.charAt(0) || ""}`.toUpperCase();

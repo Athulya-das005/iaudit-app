@@ -8,6 +8,8 @@ let globalCompanies: Company[] = [];
 let listeners: Array<() => void> = [];
 let isInitialized = false;
 
+let initializedUserId: string | null = null;
+
 function notify() {
   listeners.forEach((l) => l());
 }
@@ -19,10 +21,23 @@ export function useCompanyStore() {
 
   useEffect(() => {
     listeners.push(rerender);
-    if (!isInitialized) {
+
+    // Check current user
+    const storedUser = localStorage.getItem('user');
+    const currentUserId = storedUser ? JSON.parse(storedUser).id : null;
+
+    // Invalidate cache if user has changed
+    if (isInitialized && initializedUserId !== String(currentUserId)) {
+      isInitialized = false;
+      globalCompanies = [];
+    }
+
+    if (!isInitialized && currentUserId) {
       isInitialized = true;
+      initializedUserId = String(currentUserId);
       fetchCompanies();
     }
+
     return () => {
       listeners = listeners.filter((l) => l !== rerender);
     };
