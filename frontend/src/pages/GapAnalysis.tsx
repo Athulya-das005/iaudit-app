@@ -705,7 +705,7 @@ const GapAnalysis = () => {
                                                             <span className="font-medium text-[11px] sm:text-sm">NC</span>
                                                         </Button>
                                                     </div>
-                                                    <div className="hidden lg:block">
+                                                    <div className="mt-2 lg:mt-0">
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
