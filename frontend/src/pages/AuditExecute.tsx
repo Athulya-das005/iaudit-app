@@ -3525,131 +3525,141 @@ const AuditExecute = () => {
                       );
                     }
 
-                    return (
-                      <React.Fragment key={row.id}>
-                        <TableRow className="divide-x divide-slate-100 bg-white hover:bg-slate-50/50 transition-colors">
-                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso45001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
-                            {row.iso45001}
-                          </TableCell>
-                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso14001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
-                            {row.iso14001}
-                          </TableCell>
-                          <TableCell className={`text-[11px] leading-relaxed py-4 align-top ${row.iso9001.includes('does not exist') ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
-                            {row.iso9001}
-                          </TableCell>
+                    // Find questions for this clause from template content
+                    const questions = (template.content as ChecklistContent[]).filter(q => q.clause === row.id);
 
-                          {/* Findings */}
-                          <TableCell className="p-3 align-top">
-                            <div className="flex flex-wrap gap-1.5 justify-center">
-                              {[
-                                { val: "C", color: "bg-emerald-500" },
-                                { val: "OFI", color: "bg-amber-500" },
-                                { val: "Min", color: "bg-orange-600" },
-                                { val: "Maj", color: "bg-red-600" },
-                              ].map((opt) => (
-                                <div
-                                  key={opt.val}
-                                  className={`
-                                    w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black cursor-pointer border transition-all shadow-sm
-                                    ${type === opt.val
-                                      ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200`
-                                      : "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                                    }
-                                  `}
-                                  onClick={() => {
-                                    handleChecklistChange(index, "findings", opt.val);
-                                    handleChecklistChange(index, "clause", row.id);
-                                  }}
-                                >
-                                  {opt.val}
-                                </div>
-                              ))}
-                            </div>
-                          </TableCell>
+                    // If no questions found for this clause in the template, we might skip or show a row with original titles.
+                    // Given the user wants "questions instead of clause name", we'll only show rows for items in template.content.
 
-                          {/* Evidence */}
-                          <TableCell className="p-2 align-top">
-                            <Textarea
-                              className="min-h-[80px] text-[11px] resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-none p-2"
-                              placeholder="Evidence..."
-                              value={checklistData[index]?.evidence || ""}
-                              onChange={(e) => handleChecklistChange(index, "evidence", e.target.value)}
-                            />
-                          </TableCell>
-                        </TableRow>
+                    return questions.map((item, qIndex) => {
+                      const dataIndex = (template.content as ChecklistContent[]).indexOf(item);
+                      const type = checklistData[dataIndex]?.findings;
 
-                        {/* Extended findings for Mapping rows */}
-                        {["OFI", "Min", "Maj"].includes(type) && (
-                          <TableRow className="bg-slate-50 border-b-4 border-slate-200 text-sm">
-                            <TableCell colSpan={5} className="p-0">
-                              <div className="p-5 m-3 border bg-white rounded-xl shadow-sm border-slate-200">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div className="space-y-1.5">
-                                    <Label className="text-[11px] font-bold text-slate-700">Description</Label>
-                                    <Textarea
-                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
-                                      value={checklistData[index]?.description || ""}
-                                      onChange={(e) => handleChecklistChange(index, "description", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    <Label className="text-[11px] font-bold text-slate-700">Correction</Label>
-                                    <Textarea
-                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
-                                      value={checklistData[index]?.correction || ""}
-                                      onChange={(e) => handleChecklistChange(index, "correction", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    <Label className="text-[11px] font-bold text-slate-700">Root Cause</Label>
-                                    <Textarea
-                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
-                                      value={checklistData[index]?.rootCause || ""}
-                                      onChange={(e) => handleChecklistChange(index, "rootCause", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    <Label className="text-[11px] font-bold text-slate-700">Corrective Action</Label>
-                                    <Textarea
-                                      className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
-                                      value={checklistData[index]?.correctiveAction || ""}
-                                      onChange={(e) => handleChecklistChange(index, "correctiveAction", e.target.value)}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Action By</Label>
-                                    <Input
-                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
-                                      value={checklistData[index]?.actionBy || ""}
-                                      onChange={(e) => handleChecklistChange(index, "actionBy", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Close Date</Label>
-                                    <Input
-                                      type="date"
-                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
-                                      value={checklistData[index]?.closeDate || ""}
-                                      onChange={(e) => handleChecklistChange(index, "closeDate", e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Assign To</Label>
-                                    <Input
-                                      className="h-8 text-[11px] bg-slate-50 border-slate-200"
-                                      value={checklistData[index]?.assignTo || ""}
-                                      onChange={(e) => handleChecklistChange(index, "assignTo", e.target.value)}
-                                    />
-                                  </div>
-                                </div>
+                      return (
+                        <React.Fragment key={`${row.id}-${qIndex}`}>
+                          <TableRow className="divide-x divide-slate-100 bg-white hover:bg-slate-50/50 transition-colors">
+                            <TableCell colSpan={3} className="text-[12px] leading-relaxed py-4 px-4 align-top text-slate-800 font-medium">
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Clause {item.clause} Question:</span>
+                                {item.question}
                               </div>
                             </TableCell>
+
+                            {/* Findings */}
+                            <TableCell className="p-3 align-top">
+                              <div className="flex flex-wrap gap-1.5 justify-center">
+                                {[
+                                  { val: "C", color: "bg-emerald-500" },
+                                  { val: "OFI", color: "bg-amber-500" },
+                                  { val: "Min", color: "bg-orange-600" },
+                                  { val: "Maj", color: "bg-red-600" },
+                                ].map((opt) => (
+                                  <div
+                                    key={opt.val}
+                                    className={`
+                                      w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black cursor-pointer border transition-all shadow-sm
+                                      ${type === opt.val
+                                        ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200`
+                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                      }
+                                    `}
+                                    onClick={() => {
+                                      handleChecklistChange(dataIndex, "findings", opt.val);
+                                      handleChecklistChange(dataIndex, "clause", row.id);
+                                    }}
+                                  >
+                                    {opt.val}
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+
+                            {/* Evidence */}
+                            <TableCell className="p-2 align-top">
+                              {!["OFI", "Min", "Maj"].includes(type) && (
+                                <Textarea
+                                  className="min-h-[80px] text-[11px] resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-none p-2"
+                                  placeholder="Evidence..."
+                                  value={checklistData[dataIndex]?.evidence || ""}
+                                  onChange={(e) => handleChecklistChange(dataIndex, "evidence", e.target.value)}
+                                />
+                              )}
+                            </TableCell>
                           </TableRow>
-                        )}
-                      </React.Fragment>
-                    );
+
+                          {/* Extended findings for Mapping rows */}
+                          {["OFI", "Min", "Maj"].includes(type) && (
+                            <TableRow className="bg-slate-50 border-b-4 border-slate-200 text-sm">
+                              <TableCell colSpan={5} className="p-0">
+                                <div className="p-5 m-3 border bg-white rounded-xl shadow-sm border-slate-200">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                      <Label className="text-[11px] font-bold text-slate-700">Description</Label>
+                                      <Textarea
+                                        className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                        value={checklistData[dataIndex]?.description || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "description", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <Label className="text-[11px] font-bold text-slate-700">Correction</Label>
+                                      <Textarea
+                                        className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                        value={checklistData[dataIndex]?.correction || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "correction", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <Label className="text-[11px] font-bold text-slate-700">Root Cause</Label>
+                                      <Textarea
+                                        className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                        value={checklistData[dataIndex]?.rootCause || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "rootCause", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                      <Label className="text-[11px] font-bold text-slate-700">Corrective Action</Label>
+                                      <Textarea
+                                        className="min-h-[80px] text-[11px] bg-slate-50 border-slate-200 p-2"
+                                        value={checklistData[dataIndex]?.correctiveAction || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "correctiveAction", e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Action By</Label>
+                                      <Input
+                                        className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                        value={checklistData[dataIndex]?.actionBy || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "actionBy", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Close Date</Label>
+                                      <Input
+                                        type="date"
+                                        className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                        value={checklistData[dataIndex]?.closeDate || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "closeDate", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-bold text-slate-500 uppercase">Assign To</Label>
+                                      <Input
+                                        className="h-8 text-[11px] bg-slate-50 border-slate-200"
+                                        value={checklistData[dataIndex]?.assignTo || ""}
+                                        onChange={(e) => handleChecklistChange(dataIndex, "assignTo", e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      );
+                    });
                   })}
                 </TableBody>
               </Table>
@@ -3787,7 +3797,7 @@ const AuditExecute = () => {
                           </TableRow>
 
                           {/* Extended findings conditionally */}
-                          {["OFI", "Min", "Maj", "C"].includes(type) && (
+                          {["OFI", "Min", "Maj"].includes(type) && (
                             <TableRow className="bg-slate-50 border-b-4 border-slate-200 text-sm">
                               <TableCell colSpan={4} className="p-0">
                                 <div className="p-6 ml-6 mr-6 my-4 border bg-white rounded-xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border-slate-200">
