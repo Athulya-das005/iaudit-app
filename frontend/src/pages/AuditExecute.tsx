@@ -2420,9 +2420,29 @@ const AuditExecute = () => {
                             <span className="text-[10px] font-black bg-orange-500/20 text-orange-100 px-2 py-0.5 rounded border border-orange-500/30 shadow-sm">ISO 45001</span>
                           )}
                         </div>
-                        <span className="text-lg leading-tight truncate">
-                          {clause.iso9001 || clause.iso14001 || clause.iso45001}
-                        </span>
+                        <div className="flex flex-col gap-0.5 mt-1">
+                          {plan?.auditProgram?.isoStandard?.includes("9001") && clause.iso9001 && clause.iso9001 !== "Corresponding Clause does not exist" && (
+                            <span className="text-sm font-medium text-slate-300 italic">
+                              {clause.iso9001}
+                            </span>
+                          )}
+                          {plan?.auditProgram?.isoStandard?.includes("14001") && clause.iso14001 && clause.iso14001 !== "Corresponding Clause does not exist" && (
+                            <span className="text-sm font-medium text-slate-300 italic">
+                              {clause.iso14001}
+                            </span>
+                          )}
+                          {plan?.auditProgram?.isoStandard?.includes("45001") && clause.iso45001 && clause.iso45001 !== "Corresponding Clause does not exist" && (
+                            <span className="text-sm font-medium text-slate-300 italic">
+                              {clause.iso45001}
+                            </span>
+                          )}
+                          {/* Fallback if no specific standard is mapped */}
+                          {(!plan?.auditProgram?.isoStandard || (!clause.iso9001 && !clause.iso14001 && !clause.iso45001)) && (
+                            <span className="text-lg leading-tight truncate">
+                              {clause.iso9001 || clause.iso14001 || clause.iso45001 || clause.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </h3>
                   </div>
