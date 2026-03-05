@@ -232,6 +232,7 @@ const AuditExecute = () => {
             if (data.auditFindings) setAuditFindings(data.auditFindings);
             if (data.auditGlobalInfo) setAuditGlobalInfo(data.auditGlobalInfo);
             if (data.processAudits) setProcessAudits(data.processAudits);
+            if (data.extraChecklistItems) setExtraChecklistItems(data.extraChecklistItems);
             if (data.showExecutiveSummary !== undefined) setShowExecutiveSummary(data.showExecutiveSummary);
             if (data.showAuditParticipants !== undefined) setShowAuditParticipants(data.showAuditParticipants);
             if (data.showAuditFindings !== undefined) setShowAuditFindings(data.showAuditFindings);
@@ -670,6 +671,7 @@ const AuditExecute = () => {
         auditFindings,
         auditGlobalInfo,
         processAudits,
+        extraChecklistItems,
         showExecutiveSummary,
         showAuditParticipants,
         showAuditFindings,

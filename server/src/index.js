@@ -925,7 +925,14 @@ app.get('/api/audit-plans', async (req, res) => {
     try {
         const whereClause = {};
         if (programId) whereClause.auditProgramId = parseInt(programId);
-        if (userId) whereClause.userId = parseInt(userId);
+        if (userId) {
+            const uId = parseInt(userId);
+            whereClause.OR = [
+                { userId: uId },
+                { leadAuditorId: uId },
+                { auditors: { some: { id: uId } } }
+            ];
+        }
         const plans = await prisma.auditPlan.findMany({
             where: whereClause,
             orderBy: { createdAt: 'desc' },

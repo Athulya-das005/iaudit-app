@@ -186,9 +186,9 @@ function extractFindings(plan: any): Finding[] {
                     id: `process-${idx}`,
                     auditId: plan.id,
                     auditName,
-                    clauseRef: audit.refNo || `Process #${idx + 1}`,
+                    clauseRef: audit.refNo || audit.clauseNo || `Process #${idx + 1}`,
                     type: ft,
-                    details: audit.evidence || "",
+                    details: audit.evidence || audit.conclusion || "",
                     description: audit.description || "",
                     actionBy: audit.actionBy || "",
                     closeDate: audit.closeDate || "",
@@ -198,11 +198,55 @@ function extractFindings(plan: any): Finding[] {
         });
     }
 
+    // ── opportunities summary table ──────────────────────────────────────────
+    if (data.opportunities && Array.isArray(data.opportunities)) {
+        data.opportunities.forEach((opt: any, idx: number) => {
+            if (opt.opportunity && opt.opportunity.trim() !== "") {
+                results.push({
+                    id: `summary-ofi-${idx}`,
+                    auditId: plan.id,
+                    auditName,
+                    clauseRef: opt.standardClause || "Summary OFI",
+                    type: "OFI",
+                    details: opt.areaProcess || "",
+                    description: opt.opportunity,
+                    actionBy: "",
+                    closeDate: "",
+                    assignTo: "",
+                });
+            }
+        });
+    }
+
+    // ── nonConformances summary table ────────────────────────────────────────
+    if (data.nonConformances && Array.isArray(data.nonConformances)) {
+        data.nonConformances.forEach((ncr: any, idx: number) => {
+            if (ncr.statement && ncr.statement.trim() !== "") {
+                // Determine if Minor or Major if possible, default to Minor
+                const isMajor = ncr.id?.includes("Maj") || ncr.statement?.toLowerCase().includes("major");
+                results.push({
+                    id: `summary-ncr-${idx}`,
+                    auditId: plan.id,
+                    auditName,
+                    clauseRef: ncr.standardClause || "Summary NCR",
+                    type: isMajor ? "Major" : "Minor",
+                    details: ncr.areaProcess || "",
+                    description: ncr.statement,
+                    actionBy: ncr.actionBy || "",
+                    closeDate: ncr.dueDate || "",
+                    assignTo: "",
+                });
+            }
+        });
+    }
+
     // Deduplicate and Prioritize Severity
     const SEVERITY: Record<FindingType, number> = { OFI: 1, Minor: 2, Major: 3 };
     const seen = new Map<string, Finding>();
     results.forEach((f) => {
-        // Use a unique key that differentiates findings within the same audit
+        // We want to avoid listing the same exact finding source twice.
+        // If a finding is both in a checklist AND a summary table, they will have different IDs,
+        // so they both appear. This is actually what most auditors prefer to double check.
         const key = `${f.auditId}::${f.id}::${f.clauseRef}`;
         const existing = seen.get(key);
         if (!existing || SEVERITY[f.type] > SEVERITY[existing.type]) {
