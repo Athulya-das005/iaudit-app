@@ -91,8 +91,9 @@ function extractFindings(plan: any): Finding[] {
         const normalized = raw.trim().toLowerCase();
         if (normalized === "c" || normalized === "compliant" || normalized === "") return null;
         if (normalized.includes("ofi") || normalized.includes("opportunity")) return "OFI";
-        if (normalized.includes("min")) return "Minor";
-        if (normalized.includes("maj")) return "Major";
+        if (normalized === "min" || normalized.includes("minor")) return "Minor";
+        if (normalized === "maj" || normalized.includes("major")) return "Major";
+        if (normalized === "nc" || normalized === "non-conformance" || normalized === "nonconformance") return "Minor";
         return null;
     };
 
@@ -236,6 +237,27 @@ function extractFindings(plan: any): Finding[] {
                     description: ncr.statement,
                     actionBy: ncr.actionBy || "",
                     closeDate: ncr.dueDate || "",
+                    assignTo: "",
+                });
+            }
+        });
+    }
+
+    // ── auditFindings tab (Custom auditFindings list) ────────────────────────
+    if (data.auditFindings && Array.isArray(data.auditFindings)) {
+        data.auditFindings.forEach((finding: any, idx: number) => {
+            const ft = mapType(finding.category);
+            if (ft && finding.details && finding.details.trim() !== "") {
+                results.push({
+                    id: `auditfindings-${idx}`,
+                    auditId: plan.id,
+                    auditName,
+                    clauseRef: finding.clauseNo || finding.refNo || "General Finding",
+                    type: ft,
+                    details: finding.refNo ? `Ref: ${finding.refNo}` : "",
+                    description: finding.details,
+                    actionBy: "",
+                    closeDate: "",
                     assignTo: "",
                 });
             }
