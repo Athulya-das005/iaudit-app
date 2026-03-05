@@ -1019,10 +1019,14 @@ app.post('/api/audit-plans', async (req, res) => {
         leadAuditorId, auditorIds, itinerary, userId
     } = req.body;
 
+    if (!auditProgramId) {
+        return res.status(400).json({ error: 'Missing required field: auditProgramId' });
+    }
+
     try {
         const plan = await prisma.auditPlan.create({
             data: {
-                auditProgramId: parseInt(auditProgramId),
+                auditProgramId: parseInt(auditProgramId, 10),
                 executionId,
                 auditType,
                 auditName,
