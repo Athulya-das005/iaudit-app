@@ -925,7 +925,6 @@ app.get('/api/audit-plans', async (req, res) => {
                 auditName: true,
                 date: true,
                 location: true,
-                status: true, // If available
                 createdAt: true,
                 updatedAt: true,
                 templateId: true,
@@ -1049,6 +1048,9 @@ app.post('/api/audit-plans', async (req, res) => {
     } catch (error) {
         console.error('Error saving audit plan:', error);
         import('fs').then(fs => fs.appendFileSync('audit_debug.log', JSON.stringify({ error: error.message, stack: error.stack, body: req.body }) + '\n'));
+        if (error.code === 'P2002') {
+            return res.status(409).json({ error: 'An audit plan for this program and execution already exists.' });
+        }
         res.status(500).json({ error: 'Failed to save audit plan', details: error.message });
     }
 });
