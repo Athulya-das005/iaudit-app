@@ -77,16 +77,27 @@ const TYPE_CONFIG: Record<
 
 function extractFindings(plan: any): Finding[] {
     const results: Finding[] = [];
-    if (!plan.auditData) return results;
-
-    const data =
-        typeof plan.auditData === "string"
-            ? JSON.parse(plan.auditData)
-            : plan.auditData;
-
     const auditName: string = plan.auditName || `Audit #${plan.id}`;
 
-    const mapType = (raw: string | undefined): FindingType | null => {
+    if (!plan.auditData) {
+        console.log(`Plan #${plan.id} has no auditData.`);
+        return results;
+    }
+
+    let data: any;
+    try {
+        data = typeof plan.auditData === "string" ? JSON.parse(plan.auditData) : plan.auditData;
+    } catch (e) {
+        console.error(`Failed to parse auditData for Plan #${plan.id}:`, e);
+        return results;
+    }
+
+    if (!data || typeof data !== "object") {
+        console.log(`Plan #${plan.id} auditData is not an object. Type: ${typeof data}`);
+        return results;
+    }
+
+    const mapType = (raw: any): FindingType | null => {
         if (!raw || typeof raw !== 'string') return null;
         const normalized = raw.trim().toLowerCase();
         if (normalized === "c" || normalized === "compliant" || normalized === "compliance" || normalized === "") return null;
@@ -97,10 +108,16 @@ function extractFindings(plan: any): Finding[] {
         return null;
     };
 
+    // Helper to extract finding type from any object
+    const getFT = (obj: any): FindingType | null => {
+        if (!obj) return null;
+        return mapType(obj.findings) || mapType(obj.findingType) || mapType(obj.category) || mapType(obj.type);
+    };
+
     // ── clause-checklist (AuditExecute – clauseData) ──────────────────────────
     if (data.clauseData && typeof data.clauseData === "object") {
         Object.entries(data.clauseData).forEach(([clauseId, entry]: any) => {
-            const ft = mapType(entry?.findingType);
+            const ft = getFT(entry);
             if (ft) {
                 results.push({
                     id: `clause-${clauseId}`,
@@ -108,8 +125,8 @@ function extractFindings(plan: any): Finding[] {
                     auditName,
                     clauseRef: `Clause ${clauseId}`,
                     type: ft,
-                    details: entry.findingDetails || "",
-                    description: entry.description || "",
+                    details: entry.findingDetails || entry.evidence || "",
+                    description: entry.description || entry.descriptionText || "",
                     actionBy: entry.actionBy || "",
                     closeDate: entry.closeDate || "",
                     assignTo: entry.assignTo || "",
@@ -129,8 +146,7 @@ function extractFindings(plan: any): Finding[] {
         })();
 
         Object.entries(data.checklistData).forEach(([idx, entry]: any) => {
-            // Check both 'findings' and 'findingType' fields for reliability
-            const ft = mapType(entry?.findings) || mapType(entry?.findingType);
+            const ft = getFT(entry);
             if (ft) {
                 const itemIndex = Number(idx);
                 const templateItem = Array.isArray(templateContent) ? templateContent[itemIndex] : null;
@@ -146,7 +162,7 @@ function extractFindings(plan: any): Finding[] {
                     auditName,
                     clauseRef,
                     type: ft,
-                    details: entry.evidence || "",
+                    details: entry.evidence || entry.findingDetails || "",
                     description: entry.description || templateItem?.question || "No description provided",
                     actionBy: entry.actionBy || "",
                     closeDate: entry.closeDate || "",
@@ -161,7 +177,7 @@ function extractFindings(plan: any): Finding[] {
         Object.entries(data.extraChecklistItems).forEach(([clause, items]: any) => {
             if (Array.isArray(items)) {
                 items.forEach((item: any, idx: number) => {
-                    const ft = mapType(item.findings) || mapType(item.findingType);
+                    const ft = getFT(item);
                     if (ft) {
                         results.push({
                             id: `extra-${clause}-${idx}`,
@@ -169,7 +185,7 @@ function extractFindings(plan: any): Finding[] {
                             auditName,
                             clauseRef: `Clause ${clause} (Custom)`,
                             type: ft,
-                            details: item.evidence || "",
+                            details: item.evidence || item.findingDetails || "",
                             description: item.description || item.question || "",
                             actionBy: item.actionBy || "",
                             closeDate: item.closeDate || "",
@@ -184,7 +200,7 @@ function extractFindings(plan: any): Finding[] {
     // ── process-audit (AuditExecute – processAudits) ─────────────────────────
     if (data.processAudits && Array.isArray(data.processAudits)) {
         data.processAudits.forEach((audit: any, idx: number) => {
-            const ft = mapType(audit.findingType) || mapType(audit.findings) || mapType(audit.category);
+            const ft = getFT(audit);
             if (ft) {
                 results.push({
                     id: `process-${idx}`,
@@ -193,7 +209,7 @@ function extractFindings(plan: any): Finding[] {
                     clauseRef: audit.refNo || audit.clauseNo || `Process #${idx + 1}`,
                     type: ft,
                     details: audit.evidence || audit.conclusion || "",
-                    description: audit.description || "",
+                    description: audit.description || audit.processArea || "",
                     actionBy: audit.actionBy || "",
                     closeDate: audit.closeDate || "",
                     assignTo: audit.assignTo || "",
@@ -247,7 +263,7 @@ function extractFindings(plan: any): Finding[] {
     // ── auditFindings tab (Custom auditFindings list) ────────────────────────
     if (data.auditFindings && Array.isArray(data.auditFindings)) {
         data.auditFindings.forEach((finding: any, idx: number) => {
-            const ft = mapType(finding.category) || mapType(finding.findingType) || mapType(finding.findings);
+            const ft = getFT(finding);
             if (ft && finding.details && finding.details.trim() !== "") {
                 results.push({
                     id: `auditfindings-${idx}`,
@@ -266,9 +282,9 @@ function extractFindings(plan: any): Finding[] {
     }
 
     if (results.length > 0) {
-        console.log(`Successfully extracted ${results.length} findings for Plan #${plan.id}`);
+        console.log(`Plan #${plan.id}: Successfully extracted ${results.length} findings.`);
     } else {
-        console.log(`No findings extracted for Plan #${plan.id}. Raw data keys:`, Object.keys(data));
+        console.log(`Plan #${plan.id}: No findings found in keys:`, Object.keys(data));
     }
 
     // Deduplicate and Prioritize Severity
@@ -338,6 +354,9 @@ export default function AuditFindings() {
 
             const plans: any[] = await res.json();
             console.log("Retrieved plans count:", plans.length);
+            if (plans.length > 0) {
+                console.log("SAMPLE PLAN 0 auditData:", plans[0].auditName, plans[0].auditData);
+            }
 
             const all: Finding[] = [];
 
