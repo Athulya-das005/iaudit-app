@@ -444,7 +444,7 @@ const sendOtpLogic = async (req, res) => {
             to: email,
             subject: 'Your AuditMate Verification Code',
             text: `Your verification code is: ${otp}. This code will expire in 5 minutes.`
-        };
+        };  
 
         try {
             await transporter.sendMail(mailOptions);
