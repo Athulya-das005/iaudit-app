@@ -896,9 +896,18 @@ app.put('/api/audit-programs/:id', async (req, res) => {
 
 app.delete('/api/audit-programs/:id', async (req, res) => {
     const { id } = req.params;
+    const programId = parseInt(id);
     try {
-        await prisma.auditProgram.delete({
-            where: { id: parseInt(id) }
+        await prisma.$transaction(async (tx) => {
+            // Delete all associated audit plans first
+            await tx.auditPlan.deleteMany({
+                where: { auditProgramId: programId }
+            });
+
+            // Then delete the program
+            await tx.auditProgram.delete({
+                where: { id: programId }
+            });
         });
         res.status(204).send();
     } catch (error) {
