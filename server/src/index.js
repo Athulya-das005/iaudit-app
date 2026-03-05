@@ -748,6 +748,7 @@ app.get('/api/audit-programs', async (req, res) => {
 
         const programs = await prisma.auditProgram.findMany({
             where: { userId: parsedUserId },
+            orderBy: { createdAt: 'desc' },
             select: {
                 id: true,
                 name: true,
@@ -927,6 +928,7 @@ app.get('/api/audit-plans', async (req, res) => {
         if (userId) whereClause.userId = parseInt(userId);
         const plans = await prisma.auditPlan.findMany({
             where: whereClause,
+            orderBy: { createdAt: 'desc' },
             select: {
                 id: true,
                 executionId: true,
