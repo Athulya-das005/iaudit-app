@@ -220,6 +220,7 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                     <SelectValue placeholder="Select role" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="admin">Admin</SelectItem>
                                     <SelectItem value="auditor">Auditor</SelectItem>
                                     <SelectItem value="auditee">Auditee</SelectItem>
                                     <SelectItem value="other">Other</SelectItem>

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { auditTemplates, ChecklistContent, SectionContent, ClauseChecklistContent } from "@/data/auditTemplates";
+import { auditTemplates, ChecklistContent, SectionContent, ClauseChecklistContent, ProcessAuditContent } from "@/data/auditTemplates";
 import { toast } from "sonner";
 
 const ExecuteAuditTemplate = () => {
@@ -19,9 +19,27 @@ const ExecuteAuditTemplate = () => {
     const [checklistData, setChecklistData] = useState<Record<number, { findings: string, evidence: string, ofi: string, description?: string, correction?: string, rootCause?: string, correctiveAction?: string }>>({});
     const [sectionData, setSectionData] = useState<Record<number, string>>({});
     const [clauseData, setClauseData] = useState<Record<number, ClauseChecklistContent>>({});
+    const [processAudits, setProcessAudits] = useState<ProcessAuditContent[]>([]);
+    
+    // Editable checklist state
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [editableChecklist, setEditableChecklist] = useState<any[]>([]);
+
     const [clauseFiles, setClauseFiles] = useState<Record<string, File[]>>({});
     const [genericFiles, setGenericFiles] = useState<Record<string, File[]>>({});
 
+    // Initialize state
+    React.useEffect(() => {
+        if (template?.type === 'process-audit' && processAudits.length === 0) {
+            setProcessAudits([{ id: Date.now().toString(), findingType: "C" }]);
+        }
+        
+        // Initialize editable checklist if it's a checklist template
+        if ((template?.type === 'checklist' || template?.type === 'clause-checklist') && editableChecklist.length === 0) {
+            // we only do this for standard checklists currently based on the type check below, but init it here safely
+            setEditableChecklist((template.content as ChecklistContent[]) || []);
+        }
+    }, [template]);
     // Process Audit specific states
     const [auditGlobalInfo, setAuditGlobalInfo] = useState({
         refNo: "",
@@ -41,19 +59,6 @@ const ExecuteAuditTemplate = () => {
     });
     const [auditFindings, setAuditFindings] = useState([
         { refNo: "", clauseNo: "", details: "", category: "" }
-    ]);
-    const [processAudits, setProcessAudits] = useState([
-        {
-            id: Date.now().toString(),
-            auditees: "",
-            evidence: "",
-            conclusion: "",
-            findingType: undefined as "C" | "OFI" | "Minor" | "Major" | undefined,
-            description: "",
-            correction: "",
-            rootCause: "",
-            correctiveAction: "",
-        },
     ]);
 
     // New State for Clause Checklist Extended Sections
@@ -145,7 +150,58 @@ const ExecuteAuditTemplate = () => {
         }));
     };
 
-    const handleClauseChange = (index: number, field: keyof ClauseChecklistContent, value: any) => {
+    // --- Editable Checklist Handlers ---
+    const handleEditQuestion = (index: number, newQuestion: string) => {
+        const newList = [...editableChecklist];
+        newList[index] = { ...newList[index], question: newQuestion };
+        setEditableChecklist(newList);
+    };
+
+    const handleAddQuestion = (clause: string, insertAfterIndex: number) => {
+        const newList = [...editableChecklist];
+        const newQuestion: ChecklistContent = {
+            clause,
+            question: "",
+            findings: "",
+            evidence: "",
+            ofi: ""
+        };
+        newList.splice(insertAfterIndex + 1, 0, newQuestion);
+        setEditableChecklist(newList);
+        
+        // Adjust checklistData entries if needed, shift them down
+        const newData: Record<number, any> = {};
+        Object.keys(checklistData).forEach(key => {
+            const k = parseInt(key);
+            if (k > insertAfterIndex) {
+                 newData[k + 1] = checklistData[k];
+            } else {
+                 newData[k] = checklistData[k];
+            }
+        });
+        setChecklistData(newData);
+    };
+
+    const handleRemoveQuestion = (indexToRemove: number) => {
+        if (editableChecklist.length <= 1) return; // Prevent deleting the last item entirely if needed, or just let them
+        const newList = editableChecklist.filter((_, idx) => idx !== indexToRemove);
+        setEditableChecklist(newList);
+        
+        // Adjust checklistData entries
+        const newData: Record<number, any> = {};
+        Object.keys(checklistData).forEach(key => {
+            const k = parseInt(key);
+            if (k < indexToRemove) {
+                 newData[k] = checklistData[k];
+            } else if (k > indexToRemove) {
+                 newData[k - 1] = checklistData[k];
+            }
+        });
+        setChecklistData(newData);
+    };
+    // -----------------------------------
+
+    const handleClauseChange = (index: number, field: string, value: any) => {
         setClauseData(prev => ({
             ...prev,
             [index]: {
@@ -153,6 +209,34 @@ const ExecuteAuditTemplate = () => {
                 [field]: value
             }
         }));
+    };
+
+    const handleEditClauseSubClause = (clauseIndex: number, subIndex: number, newValue: string) => {
+        const newList = [...editableChecklist];
+        const clause = { ...newList[clauseIndex] };
+        const newSubClauses = [...clause.subClauses];
+        newSubClauses[subIndex] = newValue;
+        clause.subClauses = newSubClauses;
+        newList[clauseIndex] = clause;
+        setEditableChecklist(newList);
+    };
+
+    const handleAddSubClause = (clauseIndex: number) => {
+        const newList = [...editableChecklist];
+        const clause = { ...newList[clauseIndex] };
+        const newSubClauses = [...(clause.subClauses || []), ""];
+        clause.subClauses = newSubClauses;
+        newList[clauseIndex] = clause;
+        setEditableChecklist(newList);
+    };
+
+    const handleRemoveSubClause = (clauseIndex: number, subIndex: number) => {
+        const newList = [...editableChecklist];
+        const clause = { ...newList[clauseIndex] };
+        const newSubClauses = clause.subClauses.filter((_: any, i: number) => i !== subIndex);
+        clause.subClauses = newSubClauses;
+        newList[clauseIndex] = clause;
+        setEditableChecklist(newList);
     };
 
     const addAuditFinding = () => setAuditFindings([...auditFindings, { refNo: "", clauseNo: "", details: "", category: "" }]);
@@ -190,8 +274,8 @@ const ExecuteAuditTemplate = () => {
     const handleSubmit = () => {
         // Here you would typically save to backend
         console.log("Submitting Audit:", {
-            templateId: template.id,
-            data: template.type === 'checklist' ? checklistData : template.type === 'clause-checklist' ? clauseData : sectionData
+            templateId: template?.id,
+            data: template?.type === 'checklist' ? { checklistData, editableChecklist } : template?.type === 'clause-checklist' ? clauseData : sectionData
         });
         toast.success("Audit submitted successfully!");
         navigate("/audit-templates");
@@ -949,7 +1033,17 @@ const ExecuteAuditTemplate = () => {
                 {/* Dynamic Content Based on Type */}
                 {template.type === 'clause-checklist' ? (
                     <div className="space-y-8">
-                        {(template.content as ClauseChecklistContent[]).map((clause, index) => {
+                        <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800">Clause Checklist Details</h3>
+                            <Button 
+                                variant={isEditMode ? "default" : "outline"} 
+                                onClick={() => setIsEditMode(!isEditMode)}
+                                className={isEditMode ? "bg-amber-600 hover:bg-amber-700 text-white" : "text-amber-700 border-amber-200 hover:bg-amber-50"}
+                            >
+                                {isEditMode ? "Done Editing" : "Edit Clauses"}
+                            </Button>
+                        </div>
+                        {(editableChecklist as ClauseChecklistContent[]).map((clause, index) => {
                             const currentData = clauseData[index] || {} as ClauseChecklistContent;
                             const type = currentData.findingType;
                             const showExtended = type === 'Minor' || type === 'Major' || type === 'OFI';
@@ -960,10 +1054,40 @@ const ExecuteAuditTemplate = () => {
                                     {/* Green Header */}
                                     <div className="bg-slate-900 text-white p-4">
                                         <h3 className="text-xl font-bold">Clause {clause.clauseId} {clause.title}</h3>
-                                        <div className="mt-2 text-sm text-slate-100/90 space-y-0.5 italic">
+                                        <div className="mt-2 text-sm text-slate-100/90 space-y-2 italic">
                                             {clause.subClauses.map((sub, i) => (
-                                                <div key={i}>{sub}</div>
+                                                <div key={i} className="flex items-center gap-2 group">
+                                                    {isEditMode ? (
+                                                        <>
+                                                            <Input 
+                                                                value={sub}
+                                                                onChange={(e) => handleEditClauseSubClause(index, i, e.target.value)}
+                                                                className="bg-white/10 border-white/20 text-white h-8 text-sm focus:bg-white/20"
+                                                            />
+                                                            <Button 
+                                                                variant="ghost" 
+                                                                size="sm" 
+                                                                className="h-8 w-8 text-red-300 hover:text-red-100 p-0"
+                                                                onClick={() => handleRemoveSubClause(index, i)}
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        <div>{sub}</div>
+                                                    )}
+                                                </div>
                                             ))}
+                                            {isEditMode && (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm" 
+                                                    className="text-white/70 hover:text-white h-8 px-2"
+                                                    onClick={() => handleAddSubClause(index)}
+                                                >
+                                                    <Plus className="w-4 h-4 mr-1" /> Add Question/Sub-clause
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1138,71 +1262,116 @@ const ExecuteAuditTemplate = () => {
                     </div>
                 ) : template.type === 'process-audit' ? (
                     null
-                ) : (template.type === 'checklist' || template.type === 'clause-checklist') && (
-                    <Card className="overflow-hidden border border-slate-200 shadow-sm">
-                        <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="bg-slate-100 hover:bg-slate-100">
-                                        <TableHead className="w-[80px] font-bold text-slate-900 border-r border-slate-200">Clause</TableHead>
-                                        <TableHead className="w-[35%] font-bold text-slate-900 border-r border-slate-200">Audit Question</TableHead>
-                                        <TableHead className="w-[25%] font-bold text-slate-900 text-center border-r border-slate-200 bg-slate-50/50">Audit Findings</TableHead>
-                                        <TableHead className="w-[35%] font-bold text-slate-900 text-center">Audit Evidence</TableHead>
-                                    </TableRow>
-                                </TableHeader>
+                ) : (template.type === 'checklist') && (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800">Checklist Questions</h3>
+                            <Button 
+                                variant={isEditMode ? "default" : "outline"} 
+                                onClick={() => setIsEditMode(!isEditMode)}
+                                className={isEditMode ? "bg-amber-600 hover:bg-amber-700 text-white" : "text-amber-700 border-amber-200 hover:bg-amber-50"}
+                            >
+                                {isEditMode ? (
+                                    <>Done Editing</>
+                                ) : (
+                                    <><span className="mr-2">✏️</span> Edit Questions</>
+                                )}
+                            </Button>
+                        </div>
+                        <Card className="overflow-hidden border border-slate-200 shadow-sm">
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-slate-100 hover:bg-slate-100">
+                                            <TableHead className="w-[80px] font-bold text-slate-900 border-r border-slate-200">Clause</TableHead>
+                                            <TableHead className={`${isEditMode ? 'w-[75%]' : 'w-[35%]'} font-bold text-slate-900 border-r border-slate-200`}>Audit Question</TableHead>
+                                            {!isEditMode && (
+                                                <>
+                                                    <TableHead className="w-[25%] font-bold text-slate-900 text-center border-r border-slate-200 bg-slate-50/50">Audit Findings</TableHead>
+                                                    <TableHead className="w-[35%] font-bold text-slate-900 text-center">Audit Evidence</TableHead>
+                                                </>
+                                            )}
+                                        </TableRow>
+                                    </TableHeader>
                                 <TableBody>
-                                    {(template.content as ChecklistContent[]).map((item, index, array) => {
+                                    {editableChecklist.map((item, index, array) => {
                                         const showClause = index === 0 || array[index - 1].clause !== item.clause;
                                         const isLastInGroup = index === array.length - 1 || array[index + 1].clause !== item.clause;
 
                                         return (
-                                            <React.Fragment key={index}>
-                                                <TableRow className={`divide-x divide-slate-100 ${!isLastInGroup ? 'border-b-0' : ''}`}>
+                                            <React.Fragment key={`${index}-${item.clause}`}>
+                                                <TableRow className={`divide-x divide-slate-100 ${!isLastInGroup && !isEditMode ? 'border-b-0' : ''}`}>
                                                     <TableCell className={`font-medium align-top ${showClause ? 'bg-slate-50/50' : 'bg-transparent text-transparent select-none border-t-0'}`}>
                                                         {showClause ? item.clause : ''}
                                                     </TableCell>
-                                                    <TableCell className="align-top">{item.question}</TableCell>
-
-                                                    {/* Findings (Compliant / OFI / Minor / Major) */}
-                                                    <TableCell className="p-2 align-top bg-slate-50/10">
-                                                        <div className="flex flex-wrap gap-1 mb-2 justify-center">
-                                                            {[{ val: 'C', label: 'Compliant (C)', color: 'bg-emerald-500' }, { val: 'OFI', label: 'Opportunity for Improvement', color: 'bg-amber-500' }, { val: 'Min', label: 'Minor Non-Conformity', color: 'bg-orange-600' }, { val: 'Maj', label: 'Major Non-Conformity', color: 'bg-red-600' }].map(opt => (
-                                                                <button
-                                                                    key={opt.val}
-                                                                    onClick={() => handleChecklistChange(index, 'findings', opt.val)}
-                                                                    className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all
-                                                                    ${checklistData[index]?.findings === opt.val
-                                                                            ? `${opt.color} text-white shadow-md scale-105`
-                                                                            : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-                                                                        }`}
-                                                                    title={opt.label}
+                                                    <TableCell className="align-top">
+                                                        {isEditMode ? (
+                                                            <div className="flex items-start gap-2">
+                                                                <Textarea 
+                                                                    value={item.question}
+                                                                    onChange={(e) => handleEditQuestion(index, e.target.value)}
+                                                                    className="min-h-[80px] resize-y"
+                                                                    placeholder="Enter question text..."
+                                                                />
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon" 
+                                                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                                                                    onClick={() => handleRemoveQuestion(index)}
+                                                                    title="Delete Question"
                                                                 >
-                                                                    {opt.val}
-                                                                </button>
-                                                            ))}
-                                                        </div>
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </Button>
+                                                            </div>
+                                                        ) : (
+                                                            item.question
+                                                        )}
                                                     </TableCell>
 
-                                                    {/* Evidence */}
-                                                    <TableCell className="p-2 align-top bg-slate-50/30">
-                                                        <div className="flex flex-col h-full space-y-1">
-                                                            {!['OFI', 'Min', 'Maj'].includes(checklistData[index]?.findings) && (
-                                                                <>
-                                                                    <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Audit Evidence</Label>
-                                                                    <Textarea
-                                                                        className="min-h-[80px] text-xs resize-y border border-slate-300 bg-white shadow-sm focus:border-slate-500 focus:ring-1 focus:ring-slate-500 transition-all placeholder:text-slate-400"
-                                                                        placeholder="State documented info/records checked..."
-                                                                        value={checklistData[index]?.evidence || ""}
-                                                                        onChange={e => handleChecklistChange(index, 'evidence', e.target.value)}
-                                                                    />
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </TableCell>
+                                                    {/* Findings & Evidence - Hidden in Edit Mode */}
+                                                    {!isEditMode && (
+                                                        <>
+                                                            <TableCell className="p-2 align-top bg-slate-50/10">
+                                                                <div className="flex flex-wrap gap-1 mb-2 justify-center">
+                                                                    {[{ val: 'C', label: 'Compliant (C)', color: 'bg-emerald-500' }, { val: 'OFI', label: 'Opportunity for Improvement', color: 'bg-amber-500' }, { val: 'Min', label: 'Minor Non-Conformity', color: 'bg-orange-600' }, { val: 'Maj', label: 'Major Non-Conformity', color: 'bg-red-600' }].map(opt => (
+                                                                        <button
+                                                                            key={opt.val}
+                                                                            onClick={() => handleChecklistChange(index, 'findings', opt.val)}
+                                                                            className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold transition-all
+                                                                            ${checklistData[index]?.findings === opt.val
+                                                                                    ? `${opt.color} text-white shadow-md scale-105`
+                                                                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                                                                                }`}
+                                                                            title={opt.label}
+                                                                        >
+                                                                            {opt.val}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </TableCell>
+
+                                                            {/* Evidence */}
+                                                            <TableCell className="p-2 align-top bg-slate-50/30">
+                                                                <div className="flex flex-col h-full space-y-1">
+                                                                    {!['OFI', 'Min', 'Maj'].includes(checklistData[index]?.findings) && (
+                                                                        <>
+                                                                            <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Audit Evidence</Label>
+                                                                            <Textarea
+                                                                                className="min-h-[80px] text-xs resize-y border border-slate-300 bg-white shadow-sm focus:border-slate-500 focus:ring-1 focus:ring-slate-500 transition-all placeholder:text-slate-400"
+                                                                                placeholder="State documented info/records checked..."
+                                                                                value={checklistData[index]?.evidence || ""}
+                                                                                onChange={e => handleChecklistChange(index, 'evidence', e.target.value)}
+                                                                            />
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </TableCell>
+                                                        </>
+                                                    )}
                                                 </TableRow>
 
                                                 {/* Conditionally rendered extended fields for OFI, Min, Maj */}
-                                                {['OFI', 'Min', 'Maj'].includes(checklistData[index]?.findings) && (
+                                                {!isEditMode && ['OFI', 'Min', 'Maj'].includes(checklistData[index]?.findings) && (
                                                     <TableRow className="bg-slate-50/80 border-b-2 border-slate-200">
                                                         <TableCell colSpan={4} className="p-0">
                                                             <div className="p-6 ml-6 mr-4 my-2 border-l-4 border-slate-300 bg-white rounded-r-lg shadow-sm">
@@ -1273,45 +1442,62 @@ const ExecuteAuditTemplate = () => {
                                                     </TableRow>
                                                 )}
 
-                                                {/* Upload Evidence per Clause Group */}
+                                                {/* Upload Evidence / Add Question per Clause Group */}
                                                 {isLastInGroup && (
                                                     <>
-                                                        <TableRow className="bg-slate-50 border-b-4 border-slate-200">
-                                                            <TableCell colSpan={4} className="p-0">
-                                                                <label className="flex items-center justify-center p-3 bg-slate-50 border-t border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors group">
-                                                                    <input
-                                                                        type="file"
-                                                                        multiple
-                                                                        className="hidden"
-                                                                        onChange={(e) => handleClauseFileUpload(item.clause, e.target.files)}
-                                                                    />
-                                                                    <div className="flex flex-col items-center gap-1 text-slate-500 group-hover:text-slate-700">
-                                                                        <div className="bg-white p-2 text-slate-400 group-hover:text-amber-600 rounded-full shadow-sm border border-slate-200 group-hover:border-amber-200 transition-all">
-                                                                            <Upload className="w-4 h-4" />
-                                                                        </div>
-                                                                        <span className="text-xs font-semibold">Upload evidence (images, docs, pdfs) for Clause {item.clause}</span>
-                                                                    </div>
-                                                                </label>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                        {clauseFiles[item.clause] && clauseFiles[item.clause].length > 0 && (
-                                                            <TableRow className="bg-white border-b-2 border-slate-100">
-                                                                <TableCell colSpan={4} className="py-3 px-6">
-                                                                    <div className="flex flex-col gap-2">
-                                                                        <span className="text-xs font-bold text-slate-500 uppercase">Attached Files</span>
-                                                                        <div className="flex flex-wrap gap-2">
-                                                                            {clauseFiles[item.clause].map((file, fileIdx) => (
-                                                                                <div key={fileIdx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-xs shadow-sm">
-                                                                                    <FileText className="w-4 h-4 text-emerald-600" />
-                                                                                    <span className="max-w-[150px] truncate" title={file.name}>{file.name}</span>
-                                                                                    <Trash2
-                                                                                        className="w-3.5 h-3.5 text-slate-400 hover:text-red-500 cursor-pointer ml-1 transition-colors"
-                                                                                        onClick={() => removeClauseFile(item.clause, fileIdx)}
-                                                                                    />
+                                                        {!isEditMode ? (
+                                                            <>
+                                                                <TableRow className="bg-slate-50 border-b-4 border-slate-200">
+                                                                    <TableCell colSpan={4} className="p-0">
+                                                                        <label className="flex items-center justify-center p-3 bg-slate-50 border-t border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors group">
+                                                                            <input
+                                                                                type="file"
+                                                                                multiple
+                                                                                className="hidden"
+                                                                                onChange={(e) => handleClauseFileUpload(item.clause, e.target.files)}
+                                                                            />
+                                                                            <div className="flex flex-col items-center gap-1 text-slate-500 group-hover:text-slate-700">
+                                                                                <div className="bg-white p-2 text-slate-400 group-hover:text-amber-600 rounded-full shadow-sm border border-slate-200 group-hover:border-amber-200 transition-all">
+                                                                                    <Upload className="w-4 h-4" />
                                                                                 </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
+                                                                                <span className="text-xs font-semibold">Upload evidence (images, docs, pdfs) for Clause {item.clause}</span>
+                                                                            </div>
+                                                                        </label>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                                {clauseFiles[item.clause] && clauseFiles[item.clause].length > 0 && (
+                                                                    <TableRow className="bg-white border-b-2 border-slate-100">
+                                                                        <TableCell colSpan={4} className="py-3 px-6">
+                                                                            <div className="flex flex-col gap-2">
+                                                                                <span className="text-xs font-bold text-slate-500 uppercase">Attached Files</span>
+                                                                                <div className="flex flex-wrap gap-2">
+                                                                                    {clauseFiles[item.clause].map((file, fileIdx) => (
+                                                                                        <div key={fileIdx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-xs shadow-sm">
+                                                                                            <FileText className="w-4 h-4 text-emerald-600" />
+                                                                                            <span className="max-w-[150px] truncate" title={file.name}>{file.name}</span>
+                                                                                            <Trash2
+                                                                                                className="w-3.5 h-3.5 text-slate-400 hover:text-red-500 cursor-pointer ml-1 transition-colors"
+                                                                                                onClick={() => removeClauseFile(item.clause, fileIdx)}
+                                                                                            />
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <TableRow className="bg-slate-50/50 border-b-4 border-slate-200">
+                                                                <TableCell colSpan={2} className="p-4 text-center">
+                                                                    <Button 
+                                                                        variant="outline" 
+                                                                        size="sm" 
+                                                                        className="text-amber-700 border-amber-300 hover:bg-amber-50 gap-2"
+                                                                        onClick={() => handleAddQuestion(item.clause, index)}
+                                                                    >
+                                                                        <Plus className="w-4 h-4" /> Add Question to Clause {item.clause}
+                                                                    </Button>
                                                                 </TableCell>
                                                             </TableRow>
                                                         )}
@@ -1323,7 +1509,8 @@ const ExecuteAuditTemplate = () => {
                                 </TableBody>
                             </Table>
                         </div>
-                    </Card>
+                        </Card>
+                    </div>
                 )}
 
                 {/* Footer Actions */}

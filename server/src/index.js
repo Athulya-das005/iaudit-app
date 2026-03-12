@@ -56,12 +56,28 @@ app.use('/api', (req, res, next) => {
 const router = express.Router();
 
 // Email Transporter Configuration
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
+const transporterConfig = process.env.SMTP_HOST ? {
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_PORT === '465',
     auth: {
-        user: 'subs.safetynett@gmail.com',
-        pass: 'wdve zudb tzwf spyo'
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
     },
+    tls: {
+        ciphers: 'SSLv3',
+        rejectUnauthorized: false
+    }
+} : {
+    service: process.env.SMTP_SERVICE || 'gmail',
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
+};
+
+const transporter = nodemailer.createTransport({
+    ...transporterConfig,
     connectionTimeout: 5000, // 5 seconds
     greetingTimeout: 5000    // 5 seconds
 });
@@ -429,7 +445,7 @@ const sendOtpLogic = async (req, res) => {
 
         step = 'Generate and Store OTP';
         const otp = generateOTP();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
+        const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // 1 minute expiration
 
         // Store OTP in database
         await prisma.otp.upsert({
@@ -438,12 +454,45 @@ const sendOtpLogic = async (req, res) => {
             create: { email, code: otp, expiresAt }
         });
 
-        step = 'Send Email';
         const mailOptions = {
-            from: 'subs.safetynett@gmail.com',
+            from: {
+                name: 'iAudit Global',
+                address: process.env.SMTP_USER
+            },
             to: email,
-            subject: 'Your AuditMate Verification Code',
-            text: `Your verification code is: ${otp}. This code will expire in 5 minutes.`
+            subject: 'Your Account Verification Code',
+            headers: {
+                'X-Entity-Ref-ID': otp,
+            },
+            text: `Your verification code is: ${otp}. This code will expire in 1 minute.`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <h1 style="color: #00875b; font-size: 28px; margin: 0;">Welcome to iAudit Global</h1>
+                    </div>
+                    
+                    <p style="color: #374151; font-size: 16px; line-height: 1.5; margin-bottom: 24px;">
+                        Hello!<br><br>
+                        Please use the verification code below to confirm your email address and complete your signup securely:
+                    </p>
+                    
+                    <div style="background-color: #f3f4f6; padding: 24px; border-radius: 8px; text-align: center; margin-bottom: 32px;">
+                        <p style="text-transform: uppercase; font-size: 14px; font-weight: 600; color: #6b7280; margin: 0 0 12px 0; letter-spacing: 1px;">Secure Verification Code</p>
+                        <h2 style="font-size: 42px; font-weight: 800; color: #111827; letter-spacing: 8px; margin: 0;">${otp}</h2>
+                    </div>
+                    
+                    <p style="color: #4b5563; font-size: 14px; line-height: 1.5;">
+                        This code will expire in <strong>1 minute</strong>. If you did not request this verification, your account is safe, and you can safely ignore this email.
+                    </p>
+                    
+                    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 32px 0;" />
+                    
+                    <div style="text-align: center; color: #9ca3af; font-size: 12px;">
+                        <p style="margin: 0;">&copy; ${new Date().getFullYear()} iAudit Global. All rights reserved.</p>
+                        <p style="margin: 4px 0 0 0;">This email was sent to ${email}. Please do not reply to this automated message.</p>
+                    </div>
+                </div>
+            `
         };
 
         try {
@@ -451,6 +500,23 @@ const sendOtpLogic = async (req, res) => {
             console.log(`OTP successfully sent to ${email}`);
         } catch (emailError) {
             console.error('Email sending failed, but continuing for development/test:', emailError.message);
+            if (emailError.message.includes('5.7.139')) {
+                console.error('\n====================================================================');
+                console.error('     🚨 CRITICAL: MICROSOFT 365 SECURITY BLOCK DETECTED 🚨');
+                console.error('====================================================================');
+                console.error('Exact Issue: Microsoft Office 365 has disabled Basic Authentication');
+                console.error('             (SMTP AUTH) for the account "noreply@iaudit.global".');
+                console.error('');
+                console.error('HOW TO FIX THIS (Required Admin Action):');
+                console.error('  1. Log in to admin.microsoft.com as a Global Administrator.');
+                console.error('  2. Go to Users > Active users.');
+                console.error('  3. Click on the user: noreply@iaudit.global');
+                console.error('  4. Click the "Mail" tab on the right side window.');
+                console.error('  5. Click "Manage email apps".');
+                console.error('  6. Check the box for "Authenticated SMTP" and save changes.');
+                console.error('  7. Wait 15-30 minutes for Microsoft to apply the policy.');
+                console.error('====================================================================\n');
+            }
             console.log(`Bypassed Email - OTP for ${email} is: ${otp}`);
         }
         res.status(200).json({ message: 'OTP sent successfully (Bypassed if email failed)' });
@@ -510,7 +576,7 @@ app.post('/api/auth/verify-otp-and-signup', async (req, res) => {
                 lastName,
                 email,
                 mobile,
-                role: role || 'User',
+                role: role || 'Admin',
                 customRoleName,
                 isActive: isActive !== undefined ? isActive : true,
                 password: hashedPassword
@@ -647,22 +713,22 @@ app.post('/api/users', async (req, res) => {
         // Send welcome email if requested — fire and forget, don't block the response
         if (sendWelcomeEmail) {
             const mailOptions = {
-                from: 'subs.safetynett@gmail.com',
+                from: process.env.SMTP_USER,
                 to: email,
-                subject: 'Welcome to AuditMate!',
+                subject: 'Welcome to iAudit Global!',
                 html: `
                         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-                            <h2 style="color: #213847;">Welcome to AuditMate, ${firstName} ${lastName}!</h2>
+                            <h2 style="color: #213847;">Welcome to iAudit Global, ${firstName} ${lastName}!</h2>
                             <p style="color: #4B5563;">Your account has been created successfully. Here are your login details:</p>
                             <div style="background: #F3F4F6; border-radius: 8px; padding: 16px; margin: 20px 0;">
                                 <p style="margin: 0; color: #111827;"><strong>Name:</strong> ${firstName} ${lastName}</p>
                                 <p style="margin: 8px 0 0; color: #111827;"><strong>Email:</strong> ${email}</p>
                                 <p style="margin: 8px 0 0; color: #111827;"><strong>Password:</strong> ${password}</p>
                             </div>
-                            <p style="color: #4B5563;">You can log in to AuditMate using your email address and password above.</p>
+                            <p style="color: #4B5563;">You can log in to iAudit Global using your email address and password above.</p>
                             <p style="color: #4B5563;">If you have any questions, please contact your administrator.</p>
                             <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 24px 0;" />
-                            <p style="color: #9CA3AF; font-size: 12px;">This is an automated message from AuditMate. Please do not reply to this email.</p>
+                            <p style="color: #9CA3AF; font-size: 12px;">This is an automated message from iAudit Global. Please do not reply to this email.</p>
                         </div>
                     `
             };
@@ -742,12 +808,20 @@ app.get('/api/audit-programs', async (req, res) => {
 
     try {
         const parsedUserId = parseInt(userId);
+        console.log(`[DEBUG] Fetching audit programs for parsedUserId: ${parsedUserId}`);
         if (isNaN(parsedUserId)) {
+            console.warn(`[DEBUG] parsedUserId is NaN for userId: ${userId}`);
             return res.json([]);
         }
 
         const programs = await prisma.auditProgram.findMany({
-            where: { userId: parsedUserId },
+            where: {
+                OR: [
+                    { userId: parsedUserId },
+                    { leadAuditorId: parsedUserId },
+                    { auditors: { some: { id: parsedUserId } } }
+                ]
+            },
             orderBy: { createdAt: 'desc' },
             select: {
                 id: true,
@@ -779,10 +853,14 @@ app.get('/api/audit-programs', async (req, res) => {
                         lastName: true
                     }
                 },
-                // For the list view, we only need a flag if schedule data exists (unless full is true)
                 scheduleData: true
             }
         });
+        console.log(`[DEBUG] Found ${programs.length} programs for user ${parsedUserId}`);
+        if (programs.length > 0) {
+            console.log(`[DEBUG] First program owners: userId=${programs[0].userId}, leadAuditorId=${programs[0].leadAuditorId}`);
+            console.log(`[DEBUG] First program auditors:`, JSON.stringify(programs[0].auditors.map(a => a.id)));
+        }
         // Map to include a simple boolean for UI and optionally strip full data to save bandwidth
         const optimizedPrograms = programs.map(p => {
             const isConfigured = p.scheduleData && typeof p.scheduleData === 'object' && Object.keys(p.scheduleData).length > 0;

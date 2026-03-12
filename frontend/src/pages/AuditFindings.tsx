@@ -124,12 +124,22 @@ function extractFindings(plan: any): Finding[] {
 
     // ── clause-checklist (Integrated Checklist – clauseData) ──────────────────
     let clauseData = safeParse(data.clauseData);
+    let editableChecklist = safeParse(data.editableChecklist);
+
     if (clauseData && typeof clauseData === "object") {
         const entries = Object.entries(clauseData);
-        console.log(`Plan #${plan.id}: Checking clauseData (${entries.length} entries)`);
         entries.forEach(([clauseId, entry]: any) => {
             const ft = getFT(entry);
             if (ft) {
+                // Try to find modified title/subClauses from editableChecklist
+                const modifiedClause = Array.isArray(editableChecklist) 
+                    ? editableChecklist.find((c: any) => c.clauseId === clauseId)
+                    : null;
+                
+                const requirementText = modifiedClause 
+                    ? [modifiedClause.title, ...(modifiedClause.subClauses || [])].filter(Boolean).join("\n")
+                    : entry.title || "";
+
                 results.push({
                     id: `clause-${plan.id}-${clauseId}`,
                     auditId: plan.id,
@@ -143,7 +153,7 @@ function extractFindings(plan: any): Finding[] {
                         entry.rootCause ? `Root Cause: ${entry.rootCause}` : null,
                         entry.correctiveAction ? `Action: ${entry.correctiveAction}` : null
                     ].filter(Boolean).join("\n") || "",
-                    description: entry.description || entry.descriptionText || "",
+                    description: entry.description || entry.descriptionText || requirementText || "No description provided",
                     actionBy: entry.actionBy || "",
                     closeDate: entry.closeDate || "",
                     assignTo: entry.assignTo || "",
@@ -158,6 +168,7 @@ function extractFindings(plan: any): Finding[] {
         const entries = Object.entries(checklistData);
         console.log(`Plan #${plan.id}: Checking checklistData (${entries.length} entries)`);
         const templateContent = (() => {
+            if (Array.isArray(editableChecklist)) return editableChecklist;
             const tmplId = plan.templateId;
             if (!tmplId) return null;
             const tmpl = auditTemplates.find((t) => t.id === tmplId);

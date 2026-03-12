@@ -180,6 +180,25 @@ const AuditExecute = () => {
     Record<string, { question: string; findings: string; evidence: string; description?: string; correction?: string; rootCause?: string; correctiveAction?: string }[]>
   >({});
 
+  // Editable checklist state for modifying original template questions
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editableChecklist, setEditableChecklist] = useState<any[]>([]);
+
+  const activeStandards = {
+    iso9001: plan?.criteria?.includes("9001") || plan?.standard?.includes("9001") || plan?.criteria?.toLowerCase().includes("quality") || plan?.criteria?.toLowerCase().includes("9001"),
+    iso14001: plan?.criteria?.includes("14001") || plan?.standard?.includes("14001") || plan?.criteria?.toLowerCase().includes("environment") || plan?.criteria?.toLowerCase().includes("14001"),
+    iso45001: plan?.criteria?.includes("45001") || plan?.standard?.includes("45001") || plan?.criteria?.toLowerCase().includes("health") || plan?.criteria?.toLowerCase().includes("safety") || plan?.criteria?.toLowerCase().includes("ohs") || plan?.criteria?.toLowerCase().includes("45001"),
+  };
+
+  // If no standards match, and it's triple mapping, show all as fallback
+  const anyStandardMatched = activeStandards.iso9001 || activeStandards.iso14001 || activeStandards.iso45001;
+  const showISO9001 = activeStandards.iso9001 || !anyStandardMatched;
+  const showISO14001 = activeStandards.iso14001 || !anyStandardMatched;
+  const showISO45001 = activeStandards.iso45001 || !anyStandardMatched;
+
+  const activeCount = [showISO9001, showISO14001, showISO45001].filter(Boolean).length;
+
+
   const addExtraChecklistQuestion = (clause: string) => {
     setExtraChecklistItems(prev => ({
       ...prev,
@@ -200,6 +219,82 @@ const AuditExecute = () => {
       [clause]: (prev[clause] || []).map((item, i) => i === idx ? { ...item, [field]: value } : item)
     }));
   };
+
+  const handleEditQuestion = (index: number, newValue: string) => {
+    const newList = [...editableChecklist];
+    if (template?.type === 'clause-checklist') {
+      // Actually handled by handleEditClauseSubClause if we use that
+      return;
+    }
+    newList[index] = { ...newList[index], question: newValue };
+    setEditableChecklist(newList);
+  };
+
+  const handleEditClauseSubClause = (clauseIndex: number, subIndex: number, newValue: string) => {
+    const newList = [...editableChecklist];
+    const clause = { ...newList[clauseIndex] };
+    const newSubClauses = [...clause.subClauses];
+    newSubClauses[subIndex] = newValue;
+    clause.subClauses = newSubClauses;
+    newList[clauseIndex] = clause;
+    setEditableChecklist(newList);
+  };
+
+  const handleAddSubClause = (clauseIndex: number) => {
+    const newList = [...editableChecklist];
+    const clause = { ...newList[clauseIndex] };
+    const newSubClauses = [...(clause.subClauses || []), ""];
+    clause.subClauses = newSubClauses;
+    newList[clauseIndex] = clause;
+    setEditableChecklist(newList);
+  };
+
+  const handleRemoveSubClause = (clauseIndex: number, subIndex: number) => {
+    const newList = [...editableChecklist];
+    const clause = { ...newList[clauseIndex] };
+    const newSubClauses = clause.subClauses.filter((_: any, i: number) => i !== subIndex);
+    clause.subClauses = newSubClauses;
+    newList[clauseIndex] = clause;
+    setEditableChecklist(newList);
+  };
+
+  const handleAddQuestion = (clause: string, insertAfterIndex: number) => {
+    const newList = [...editableChecklist];
+    const newQuestion: ChecklistContent = {
+      clause,
+      question: "",
+      findings: "",
+      evidence: "",
+      ofi: ""
+    };
+    newList.splice(insertAfterIndex + 1, 0, newQuestion);
+    setEditableChecklist(newList);
+
+    // Shift checklistData down
+    const newData: Record<number, any> = {};
+    Object.keys(checklistData).forEach(key => {
+      const k = parseInt(key);
+      if (k > insertAfterIndex) newData[k + 1] = checklistData[k];
+      else newData[k] = checklistData[k];
+    });
+    setChecklistData(newData);
+  };
+
+  const handleRemoveQuestion = (indexToRemove: number) => {
+    if (editableChecklist.length <= 1) return;
+    const newList = editableChecklist.filter((_, idx) => idx !== indexToRemove);
+    setEditableChecklist(newList);
+
+    // Shift checklistData up
+    const newData: Record<number, any> = {};
+    Object.keys(checklistData).forEach(key => {
+      const k = parseInt(key);
+      if (k < indexToRemove) newData[k] = checklistData[k];
+      else if (k > indexToRemove) newData[k - 1] = checklistData[k];
+    });
+    setChecklistData(newData);
+  };
+
 
 
 
@@ -238,6 +333,13 @@ const AuditExecute = () => {
             if (data.showAuditFindings !== undefined) setShowAuditFindings(data.showAuditFindings);
             if (data.clauseFiles) setClauseFiles(data.clauseFiles);
             if (data.genericFiles) setGenericFiles(data.genericFiles);
+            if (data.editableChecklist) {
+              setEditableChecklist(data.editableChecklist);
+            } else if (template?.content) {
+              setEditableChecklist(template.content);
+            }
+          } else if (template?.content) {
+            setEditableChecklist(template.content);
           }
         }
       } catch (error) {
@@ -678,7 +780,8 @@ const AuditExecute = () => {
         lastSaved: new Date().toISOString(),
         progress: progressValue,
         clauseFiles,
-        genericFiles
+        genericFiles,
+        editableChecklist
       };
 
       const res = await fetch(`${API_BASE_URL}/api/audit-plans/${id}`, {
@@ -907,7 +1010,7 @@ const AuditExecute = () => {
       const bodyRows: any[] = [];
       const imgRowMap = new Map<number, string>(); // rowIndex -> image data URL
 
-      (template.content as ChecklistContent[]).forEach((item, idx) => {
+      (editableChecklist as ChecklistContent[]).forEach((item, idx) => {
         const d = (checklistData[idx] || {}) as any;
         if (!d.findings) return; // skip unfilled
         // Main finding row
@@ -980,14 +1083,23 @@ const AuditExecute = () => {
       }
     } else if (template.type === 'clause-checklist') {
       y = section('8. CLAUSE CHECKLIST', y);
-      const filledClauses = clausesToRender.filter(c => (clauseData[c.id] as any)?.findingType);
+      const checklistToUse = (editableChecklist as ClauseChecklistContent[]).length > 0
+        ? (editableChecklist as ClauseChecklistContent[])
+        : (template.content as ClauseChecklistContent[]);
+
+      const filledClauses = checklistToUse.filter(c => (clauseData[c.clauseId] || {} as any).findingType);
       if (filledClauses.length === 0) {
         doc.setFontSize(9); doc.setTextColor(150, 150, 150);
         doc.text('No findings recorded yet.', margin, y); y += 12;
       } else {
         autoTable(doc, {
           startY: y, head: [['Clause', 'Requirement', 'Status', 'Evidence']],
-          body: filledClauses.map(c => { const d = (clauseData[c.id] || {}) as any; return [c.id, c.iso9001 || c.iso14001 || c.iso45001, d.findingType || '—', d.evidence || '—']; }),
+          body: filledClauses.map(c => { 
+            const d = (clauseData[c.clauseId] || {}) as any; 
+            // Join sub clauses with newlines
+            const requirement = [c.title, ...(c.subClauses || [])].filter(Boolean).join('\n');
+            return [c.clauseId, requirement, d.findingType || '—', d.evidence || '—']; 
+          }),
           theme: 'grid', styles: { fontSize: 8, overflow: 'linebreak' },
           columnStyles: { 0: { cellWidth: 18 }, 2: { cellWidth: 18 } }, headStyles: { fillColor: darkColor },
           didParseCell: (data) => {
@@ -1030,47 +1142,78 @@ const AuditExecute = () => {
         y = (doc as any).lastAutoTable.finalY + 10;
       }
     } else if (template.isTripleMapping) {
-      y = section('8. INTEGRATED AUDIT MAPPING (ISO 9001, 14001, 45001)', y);
+      y = section(`8. INTEGRATED AUDIT MAPPING (${[showISO9001 && 'ISO 9001', showISO14001 && 'ISO 14001', showISO45001 && 'ISO 45001'].filter(Boolean).join(', ')})`, y);
       const rows: any[] = [];
       const lblStyle = { fillColor: darkColor as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8, cellPadding: 3 };
 
       CLAUSE_MATRIX.forEach((row, idx) => {
         if (!isClauseSelected(row.id)) return;
-        const d = (checklistData[idx] || {}) as any;
-
+        
+        // Use editableChecklist if available to match UI
+        const questions = (editableChecklist as ChecklistContent[]).filter(q => q.clause === row.id);
+        
         if (row.isHeading) {
-          rows.push([{ content: `${row.iso45001} / ${row.iso14001} / ${row.iso9001}`, colSpan: 5, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+          const headingParts = [
+            showISO45001 && row.iso45001, 
+            showISO14001 && row.iso14001, 
+            showISO9001 && row.iso9001
+          ].filter(Boolean);
+          rows.push([{ content: headingParts.join(' / '), colSpan: activeCount + 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
           return;
         }
 
-        if (!d.findings) return;
+        questions.forEach(q => {
+          const dIdx = editableChecklist.indexOf(q);
+          const d = (checklistData[dIdx] || {}) as any;
+          if (!d.findings) return;
 
-        // Main row
-        rows.push([row.iso45001, row.iso14001, row.iso9001, d.findings, d.evidence || '—']);
+          const rowData = [
+            showISO45001 && row.iso45001,
+            showISO14001 && row.iso14001,
+            showISO9001 && row.iso9001,
+            d.findings,
+            d.evidence || '—'
+          ].filter(val => val !== false);
 
-        // NC details
-        if (d.findings !== 'C') {
-          if (d.description?.trim()) rows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
-          if (d.correction?.trim()) rows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
-          if (d.rootCause?.trim()) rows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
-          if (d.correctiveAction?.trim()) rows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: 4, styles: { fontSize: 8, cellPadding: 3 } }]);
-        }
+          rows.push(rowData);
+
+          if (d.findings !== 'C') {
+            if (d.description?.trim()) rows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.correction?.trim()) rows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.rootCause?.trim()) rows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.correctiveAction?.trim()) rows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+          }
+        });
       });
 
       if (rows.length === 0) {
         doc.setFontSize(9); doc.setTextColor(150, 150, 150);
         doc.text('No findings recorded yet.', margin, y); y += 12;
       } else {
+        const head = [
+          showISO45001 && 'ISO 45001',
+          showISO14001 && 'ISO 14001',
+          showISO9001 && 'ISO 9001',
+          'Finding',
+          'Evidence'
+        ].filter(Boolean) as string[];
+
         autoTable(doc, {
           startY: y,
-          head: [['ISO 45001', 'ISO 14001', 'ISO 9001', 'Finding', 'Evidence']],
+          head: [head],
           body: rows,
           theme: 'grid',
           styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-          columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 35 }, 2: { cellWidth: 35 }, 3: { cellWidth: 15 }, 4: { cellWidth: 'auto' } },
+          columnStyles: { 
+            0: { cellWidth: activeCount === 1 ? 105 : activeCount === 2 ? 52 : 35 },
+            1: { cellWidth: activeCount === 2 ? 52 : 35 },
+            2: { cellWidth: 35 },
+            [activeCount]: { cellWidth: 15 },
+            [activeCount + 1]: { cellWidth: 'auto' } 
+          },
           headStyles: { fillColor: darkColor },
           didParseCell: (data) => {
-            if (data.section === 'body' && data.column.index === 3) {
+            if (data.section === 'body' && data.column.index === activeCount) {
               const f = String(data.cell.raw || '');
               if (f === 'C') data.cell.styles.textColor = [16, 185, 129];
               else if (f === 'OFI') data.cell.styles.textColor = [245, 158, 11];
@@ -1119,7 +1262,7 @@ const AuditExecute = () => {
     const rows: any[] = [];
 
     if (template.type === "checklist") {
-      (template.content as ChecklistContent[]).forEach((item, idx) => {
+      (editableChecklist as ChecklistContent[]).forEach((item, idx) => {
         const data = (checklistData[idx] || {}) as any;
         rows.push({
           "Clause": item.clause,
@@ -1132,12 +1275,32 @@ const AuditExecute = () => {
       CLAUSE_MATRIX.forEach((row, idx) => {
         if (!isClauseSelected(row.id)) return;
         if (row.isHeading) return;
-        const data = (checklistData[idx] || {}) as any;
+        
+        const questionsForClause = (editableChecklist as ChecklistContent[]).filter(q => q.clause === row.id);
+        
+        questionsForClause.forEach(q => {
+          const dIdx = editableChecklist.indexOf(q);
+          const data = (checklistData[dIdx] || {}) as any;
+          if (!data.findings) return;
+          
+          const rowData: any = {};
+          if (showISO45001) rowData["ISO 45001"] = row.iso45001;
+          if (showISO14001) rowData["ISO 14001"] = row.iso14001;
+          if (showISO9001) rowData["ISO 9001"] = row.iso9001;
+          rowData["Question"] = q.question;
+          rowData["Finding"] = data.findings;
+          rowData["Evidence"] = data.evidence;
+          rows.push(rowData);
+        });
+      });
+    } else if (template.type === 'clause-checklist') {
+      (editableChecklist as ClauseChecklistContent[]).forEach(c => {
+        const data = (clauseData[c.clauseId] || {}) as any;
+        const requirement = [c.title, ...(c.subClauses || [])].filter(Boolean).join('\n');
         rows.push({
-          "ISO 45001": row.iso45001,
-          "ISO 14001": row.iso14001,
-          "ISO 9001": row.iso9001,
-          "Finding": data.findings,
+          "Clause": c.clauseId,
+          "Requirement": requirement,
+          "Status": data.findingType,
           "Evidence": data.evidence
         });
       });
@@ -1324,9 +1487,9 @@ const AuditExecute = () => {
     content.push(spacer());
 
     // 8. Template Fields (filled only, NC details inline)
-    if (template.type === 'checklist') {
+    if (template.type === 'checklist' || template.isTripleMapping) {
       content.push(makeHeader('8. AUDIT CHECKLIST FINDINGS'));
-      const filledChecklist = (template.content as ChecklistContent[])
+      const filledChecklist = (editableChecklist as ChecklistContent[])
         .map((item, idx) => ({ item, d: (checklistData[idx] || {}) as any }))
         .filter(({ d }) => d.findings);
       if (filledChecklist.length === 0) {
@@ -1381,11 +1544,19 @@ const AuditExecute = () => {
       }
     } else if (template.type === 'clause-checklist') {
       content.push(makeHeader('8. CLAUSE CHECKLIST'));
-      const filledClauses = clausesToRender.filter(c => (clauseData[c.id] as any)?.findingType);
+      const checklistToUse = (editableChecklist as ClauseChecklistContent[]).length > 0
+        ? (editableChecklist as ClauseChecklistContent[])
+        : (template.content as ClauseChecklistContent[]);
+
+      const filledClauses = checklistToUse.filter(c => (clauseData[c.clauseId] || {} as any).findingType);
       if (filledClauses.length === 0) {
         content.push(new Paragraph({ children: [new TextRun({ text: 'No findings recorded yet.', size: 20, color: '888888' })] }));
       } else {
-        content.push(tbl(['Clause', 'Requirement', 'Status', 'Evidence'], filledClauses.map(c => { const d = (clauseData[c.id] || {}) as any; return [c.id, c.iso9001 || c.iso14001 || c.iso45001, d.findingType || '—', d.evidence || '—']; })));
+        content.push(tbl(['Clause', 'Requirement', 'Status', 'Evidence'], filledClauses.map(c => { 
+          const d = (clauseData[c.clauseId] || {}) as any; 
+          const requirement = [c.title, ...(c.subClauses || [])].filter(Boolean).join('\n');
+          return [c.clauseId, requirement, d.findingType || '—', d.evidence || '—']; 
+        })));
       }
     } else if (template.type === 'section') {
       content.push(makeHeader('8. SECTION RESPONSES'));
@@ -2387,7 +2558,43 @@ const AuditExecute = () => {
         {/* --- TEMPLATE DYNAMIC CHECKLIST --- */}
         {template.type === "clause-checklist" ? (
           <div className="space-y-6">
-            {clausesToRender.map((clause) => {
+            <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-5 h-5 text-slate-400" />
+                Audit Checklist Details
+              </h3>
+              <Button 
+                variant={isEditMode ? "default" : "outline"}
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={isEditMode ? "bg-amber-500 hover:bg-amber-600 text-white" : "text-amber-600 border-amber-200 hover:bg-amber-50"}
+              >
+                <Edit className="w-4 h-4 mr-2" />
+                {isEditMode ? "Done Editing" : "Edit Questions"}
+              </Button>
+            </div>
+            {(editableChecklist as ClauseChecklistContent[]).map((clauseContent, index) => {
+              // 1. Filter by schedule selection if applicable
+              if (explicitlySelectedClauses.length > 0 && !explicitlySelectedClauses.some(c => c.id === clauseContent.clauseId)) {
+                return null;
+              }
+
+              // 2. Filter by standard relevance if it's an integrated/multi-standard context
+              const clauseInMatrix = CLAUSE_MATRIX.find(m => m.id === clauseContent.clauseId);
+              if (clauseInMatrix) {
+                const isRelevantToActiveStandards = 
+                  (showISO9001 && clauseInMatrix.iso9001 && !clauseInMatrix.iso9001.toLowerCase().includes('does not exist')) ||
+                  (showISO14001 && clauseInMatrix.iso14001 && !clauseInMatrix.iso14001.toLowerCase().includes('does not exist')) ||
+                  (showISO45001 && clauseInMatrix.iso45001 && !clauseInMatrix.iso45001.toLowerCase().includes('does not exist'));
+
+                if (!isRelevantToActiveStandards) return null;
+              }
+
+              const clause = clauseInMatrix || {
+                id: clauseContent.clauseId,
+                iso9001: clauseContent.title,
+                iso14001: clauseContent.title,
+                iso45001: clauseContent.title
+              } as any;
               const currentData =
                 clauseData[clause.id] || ({} as ClauseChecklistContent);
               const type = currentData.findingType;
@@ -2450,6 +2657,53 @@ const AuditExecute = () => {
                   </div>
 
                   <CardContent className="p-5 bg-white text-slate-900 flex flex-col gap-6">
+                    {/* Sub-clauses / Questions */}
+                    <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-600 uppercase tracking-wider">
+                          Questions / Requirements:
+                        </span>
+                        {isEditMode && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-slate-500 hover:text-slate-700 h-8 px-2"
+                            onClick={() => handleAddSubClause(index)}
+                          >
+                            <Plus className="w-4 h-4 mr-1" /> Add Question
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {clauseContent.subClauses?.map((sub, i) => (
+                          <div key={i} className="flex items-start gap-3 group">
+                            {isEditMode ? (
+                              <div className="flex-1 flex gap-2">
+                                <Textarea 
+                                  value={sub}
+                                  onChange={(e) => handleEditClauseSubClause(index, i, e.target.value)}
+                                  className="bg-white border-slate-200 text-slate-900 min-h-[60px] p-2 text-sm focus:ring-1 ring-amber-200"
+                                />
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 text-slate-300 hover:text-red-500 p-0"
+                                  onClick={() => handleRemoveSubClause(index, i)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-slate-300 mt-1 shrink-0" />
+                                <span className="text-slate-700 leading-relaxed text-sm">{sub}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Finding Type Selector */}
                     <div className="flex flex-wrap md:flex-nowrap items-center gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                       <span className="text-sm font-bold text-slate-600 uppercase tracking-wider whitespace-nowrap">
@@ -3483,23 +3737,34 @@ const AuditExecute = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-800 hover:bg-slate-800 border-none">
-                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
-                      ISO 45001:2018
-                    </TableHead>
-                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
-                      ISO 14001:2015
-                    </TableHead>
-                    <TableHead className="w-[18%] font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider">
-                      ISO 9001:2015
-                    </TableHead>
-                    <TableHead className="w-[16%] font-bold text-white text-center border-r border-slate-700 text-xs uppercase tracking-wider">
-                      Finding
-                    </TableHead>
-                    <TableHead className="w-[30%] font-bold text-white text-center text-xs uppercase tracking-wider">
-                      Audit Evidence
-                    </TableHead>
+                    {showISO45001 && (
+                      <TableHead className={`${activeCount === 1 ? 'w-[54%]' : activeCount === 2 ? 'w-[27%]' : 'w-[18%]'} font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider`}>
+                        ISO 45001:2018
+                      </TableHead>
+                    )}
+                    {showISO14001 && (
+                      <TableHead className={`${activeCount === 1 ? 'w-[54%]' : activeCount === 2 ? 'w-[27%]' : 'w-[18%]'} font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider`}>
+                        ISO 14001:2015
+                      </TableHead>
+                    )}
+                    {showISO9001 && (
+                      <TableHead className={`${activeCount === 1 ? 'w-[54%]' : activeCount === 2 ? 'w-[27%]' : 'w-[18%]'} font-bold text-white border-r border-slate-700 text-xs uppercase tracking-wider`}>
+                        ISO 9001:2015
+                      </TableHead>
+                    )}
+                    {!isEditMode && (
+                      <>
+                        <TableHead className="w-[16%] font-bold text-white text-center border-r border-slate-700 text-xs uppercase tracking-wider">
+                          Finding
+                        </TableHead>
+                        <TableHead className="w-[30%] font-bold text-white text-center text-xs uppercase tracking-wider">
+                          Audit Evidence
+                        </TableHead>
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {CLAUSE_MATRIX.map((row, index) => {
                     // Filter based on schedule if needed
@@ -3511,83 +3776,172 @@ const AuditExecute = () => {
                     }
 
                     if (row.isHeading) {
+                      // Only show heading if at least one active standard has content for it
+                      const hasActiveContent = 
+                        (showISO9001 && row.iso9001 && !row.iso9001.toLowerCase().includes('does not exist')) ||
+                        (showISO14001 && row.iso14001 && !row.iso14001.toLowerCase().includes('does not exist')) ||
+                        (showISO45001 && row.iso45001 && !row.iso45001.toLowerCase().includes('does not exist'));
+                      
+                      if (!hasActiveContent) return null;
+
                       return (
                         <TableRow key={row.id} className="bg-[#213847] hover:bg-[#213847] border-none">
-                          <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
-                            {row.iso45001} {row.iso45001 && !row.iso45001.includes('does not exist') && '(45001)'}
-                          </TableCell>
-                          <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
-                            {row.iso14001} {row.iso14001 && !row.iso14001.includes('does not exist') && '(14001)'}
-                          </TableCell>
-                          <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
-                            {row.iso9001} {row.iso9001 && !row.iso9001.includes('does not exist') && '(9001)'}
-                          </TableCell>
-                          <TableCell colSpan={2} className="bg-[#213847]"></TableCell>
+                          {showISO45001 && (
+                            <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
+                              {row.iso45001} {row.iso45001 && !row.iso45001.includes('does not exist') && '(45001)'}
+                            </TableCell>
+                          )}
+                          {showISO14001 && (
+                            <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
+                              {row.iso14001} {row.iso14001 && !row.iso14001.includes('does not exist') && '(14001)'}
+                            </TableCell>
+                          )}
+                          {showISO9001 && (
+                            <TableCell className="font-bold text-white text-[10px] py-3 border-r border-slate-700">
+                              {row.iso9001} {row.iso9001 && !row.iso9001.includes('does not exist') && '(9001)'}
+                            </TableCell>
+                          )}
+                          {!isEditMode && <TableCell colSpan={2} className="bg-[#213847]"></TableCell>}
                         </TableRow>
                       );
                     }
 
-                    // Find questions for this clause from template content
-                    const questions = (template.content as ChecklistContent[]).filter(q => q.clause === row.id);
+                    // For non-heading rows:
+                    const isRelevantToActiveStandards = 
+                      (showISO9001 && row.iso9001 && !row.iso9001.toLowerCase().includes('does not exist')) ||
+                      (showISO14001 && row.iso14001 && !row.iso14001.toLowerCase().includes('does not exist')) ||
+                      (showISO45001 && row.iso45001 && !row.iso45001.toLowerCase().includes('does not exist'));
 
-                    // If no questions found for this clause in the template, we might skip or show a row with original titles.
-                    // Given the user wants "questions instead of clause name", we'll only show rows for items in template.content.
+                    if (!isRelevantToActiveStandards) return null;
+
+                    // Find questions for this clause from editable checklist
+                    let questions = (editableChecklist as ChecklistContent[]).filter(q => q.clause === row.id);
+
+                    // If no questions found for this relevant clause, provide a default one so it's not empty
+                    if (questions.length === 0) {
+                      const defaultQuestionText = [
+                        showISO9001 && row.iso9001,
+                        showISO14001 && row.iso14001,
+                        showISO45001 && row.iso45001
+                      ].filter(q => q && !q.toLowerCase().includes('does not exist')).join(' / ') || `Clause ${row.id} requirements`;
+                      
+                      // Note: Handle adding this to editableChecklist if the user wants to audit it
+                      // For now, we show a button to add it, or just show it as a placeholder.
+                      // Let's at least show a placeholder row in Edit Mode to allow adding.
+                      if (!isEditMode) return null; // Or show it? Auditor might want to audit it.
+                      
+                      return (
+                        <TableRow key={row.id} className="bg-slate-50/50">
+                          <TableCell colSpan={activeCount} className="p-4 text-center">
+                            <span className="text-[11px] text-slate-400 italic mr-3">No questions defined for Clause {row.id}</span>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-7 text-[10px] border-slate-200"
+                              onClick={() => handleAddQuestion(row.id, editableChecklist.length)}
+                            >
+                              <Plus className="w-3 h-3 mr-1" /> Add Question
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
 
                     return questions.map((item, qIndex) => {
-                      const dataIndex = (template.content as ChecklistContent[]).indexOf(item);
+                      const dataIndex = (editableChecklist as any[]).findIndex(q => q === item);
                       const type = checklistData[dataIndex]?.findings;
 
                       return (
                         <React.Fragment key={`${row.id}-${qIndex}`}>
                           <TableRow className="divide-x divide-slate-100 bg-white hover:bg-slate-50/50 transition-colors">
-                            <TableCell colSpan={3} className="text-[12px] leading-relaxed py-4 px-4 align-top text-slate-800 font-medium">
+                            <TableCell colSpan={isEditMode ? activeCount : activeCount} className="text-[12px] leading-relaxed py-4 px-4 align-top text-slate-800 font-medium whitespace-pre-wrap">
                               <div className="flex flex-col gap-1">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Clause {item.clause} Question:</span>
-                                {item.question}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Clause {item.clause} Question:</span>
+                                  {isEditMode && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => handleRemoveQuestion(dataIndex)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                                {isEditMode ? (
+                                  <Textarea
+                                    className="min-h-[80px] text-[12px] mt-1 border-amber-200 bg-amber-50/20 focus:bg-white"
+                                    value={item.question}
+                                    onChange={(e) => handleEditQuestion(dataIndex, e.target.value)}
+                                  />
+                                ) : (
+                                  item.question
+                                )}
                               </div>
                             </TableCell>
 
-                            {/* Findings */}
-                            <TableCell className="p-3 align-top">
-                              <div className="flex flex-wrap gap-1.5 justify-center">
-                                {[
-                                  { val: "C", color: "bg-emerald-500" },
-                                  { val: "OFI", color: "bg-amber-500" },
-                                  { val: "Min", color: "bg-orange-600" },
-                                  { val: "Maj", color: "bg-red-600" },
-                                ].map((opt) => (
-                                  <div
-                                    key={opt.val}
-                                    className={`
-                                      w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black cursor-pointer border transition-all shadow-sm
-                                      ${type === opt.val
-                                        ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200`
-                                        : "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                                      }
-                                    `}
-                                    onClick={() => {
-                                      handleChecklistChange(dataIndex, "findings", opt.val);
-                                      handleChecklistChange(dataIndex, "clause", row.id);
-                                    }}
-                                  >
-                                    {opt.val}
+                            {!isEditMode && (
+                              <>
+                                {/* Findings */}
+                                <TableCell className="p-3 align-top">
+                                  <div className="flex flex-wrap gap-1.5 justify-center">
+                                    {[
+                                      { val: "C", color: "bg-emerald-500" },
+                                      { val: "OFI", color: "bg-amber-500" },
+                                      { val: "Min", color: "bg-orange-600" },
+                                      { val: "Maj", color: "bg-red-600" },
+                                    ].map((opt) => (
+                                      <div
+                                        key={opt.val}
+                                        className={`
+                                          w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black cursor-pointer border transition-all shadow-sm
+                                          ${type === opt.val
+                                            ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200`
+                                            : "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                          }
+                                        `}
+                                        onClick={() => {
+                                          handleChecklistChange(dataIndex, "findings", opt.val);
+                                          handleChecklistChange(dataIndex, "clause", row.id);
+                                        }}
+                                      >
+                                        {opt.val}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            </TableCell>
+                                </TableCell>
 
-                            {/* Evidence */}
-                            <TableCell className="p-2 align-top">
-                              {!["OFI", "Min", "Maj"].includes(type) && (
-                                <Textarea
-                                  className="min-h-[80px] text-[11px] resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-none p-2"
-                                  placeholder="Evidence..."
-                                  value={checklistData[dataIndex]?.evidence || ""}
-                                  onChange={(e) => handleChecklistChange(dataIndex, "evidence", e.target.value)}
-                                />
-                              )}
-                            </TableCell>
+                                {/* Evidence */}
+                                <TableCell className="p-2 align-top">
+                                  {!["OFI", "Min", "Maj"].includes(type) && (
+                                    <Textarea
+                                      className="min-h-[80px] text-[11px] resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-none p-2"
+                                      placeholder="Evidence..."
+                                      value={checklistData[dataIndex]?.evidence || ""}
+                                      onChange={(e) => handleChecklistChange(dataIndex, "evidence", e.target.value)}
+                                    />
+                                  )}
+                                </TableCell>
+                              </>
+                            )}
                           </TableRow>
+
+                          {isEditMode && qIndex === questions.length - 1 && (
+                            <TableRow className="bg-amber-50/30">
+                              <TableCell colSpan={activeCount} className="p-2 text-center border-b border-amber-100">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="text-amber-700 hover:bg-amber-100/50 h-8 gap-2 text-[10px] font-bold uppercase tracking-wider"
+                                  onClick={() => handleAddQuestion(row.id, dataIndex)}
+                                >
+                                  <Plus className="w-3 h-3" /> Add Question to Clause {row.id}
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )}
+
 
                           {/* Extended findings for Mapping rows */}
                           {["OFI", "Min", "Maj"].includes(type) && (
@@ -3688,11 +4042,22 @@ const AuditExecute = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(template.content as ChecklistContent[]).map(
+                  {(editableChecklist as ChecklistContent[]).map(
                     (item, index, array) => {
-                      // Determine if this checklist item is relevant
+                      // 1. Filter by schedule selection
                       if (!isClauseSelected(item.clause)) {
                         return null;
+                      }
+
+                      // 2. Filter by standard relevance if mapped in CLAUSE_MATRIX
+                      const clauseInMatrix = CLAUSE_MATRIX.find(m => m.id === item.clause);
+                      if (clauseInMatrix) {
+                        const isRelevantToActiveStandards = 
+                          (showISO9001 && clauseInMatrix.iso9001 && !clauseInMatrix.iso9001.toLowerCase().includes('does not exist')) ||
+                          (showISO14001 && clauseInMatrix.iso14001 && !clauseInMatrix.iso14001.toLowerCase().includes('does not exist')) ||
+                          (showISO45001 && clauseInMatrix.iso45001 && !clauseInMatrix.iso45001.toLowerCase().includes('does not exist'));
+
+                        if (!isRelevantToActiveStandards) return null;
                       }
 
                       const type = checklistData[index]?.findings;
@@ -3742,60 +4107,85 @@ const AuditExecute = () => {
                               ) : ''}
                             </TableCell>
                             <TableCell className="align-top font-medium text-slate-800 py-4">
-                              {item.question}
-                            </TableCell>
-
-                            {/* Findings Selection */}
-                            <TableCell className="p-4 align-top">
-                              <div className="flex flex-wrap gap-2 justify-center">
-                                {[
-                                  { val: "C", color: "bg-emerald-500" },
-                                  { val: "OFI", color: "bg-amber-500" },
-                                  { val: "Min", color: "bg-orange-600" },
-                                  { val: "Maj", color: "bg-red-600" },
-                                ].map((opt) => (
-                                  <div
-                                    key={opt.val}
-                                    className={`
-                                                                    w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black cursor-pointer border transition-all shadow-sm
-                                                                    ${type ===
-                                        opt.val
-                                        ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200 ring-offset-1`
-                                        : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                                      }
-                                                                `}
-                                    onClick={() => {
-                                      handleChecklistChange(index, "findings", opt.val);
-                                      // Also persist clause so AuditFindings can group correctly
-                                      handleChecklistChange(index, "clause", item.clause);
-                                    }}
-
-                                  >
-                                    {opt.val}
+                              {isEditMode ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Question Text:</span>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => handleRemoveQuestion(index)}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
                                   </div>
-                                ))}
-                              </div>
+                                  <Textarea
+                                    className="min-h-[100px] text-sm border-amber-200 bg-amber-50/20 focus:bg-white p-3"
+                                    value={item.question}
+                                    onChange={(e) => handleEditQuestion(index, e.target.value)}
+                                  />
+                                </div>
+                              ) : (
+                                item.question
+                              )}
                             </TableCell>
 
-                            {/* Evidence */}
-                            <TableCell className="p-3 align-top">
-                              <div className="flex flex-col h-full">
-                                {!["OFI", "Min", "Maj"].includes(type) && (
-                                  <Textarea
-                                    className="min-h-[100px] text-sm resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-sm transition-colors placeholder:text-slate-400 p-3"
-                                    placeholder="Documented info / records checked..."
-                                    value={checklistData[index]?.evidence || ""}
-                                    onChange={(e) =>
-                                      handleChecklistChange(
-                                        index,
-                                        "evidence",
-                                        e.target.value,
-                                      )
-                                    }
-                                  />
-                                )}
-                              </div>
-                            </TableCell>
+                            {!isEditMode && (
+                              <>
+                                {/* Findings Selection */}
+                                <TableCell className="p-4 align-top">
+                                  <div className="flex flex-wrap gap-2 justify-center">
+                                    {[
+                                      { val: "C", color: "bg-emerald-500" },
+                                      { val: "OFI", color: "bg-amber-500" },
+                                      { val: "Min", color: "bg-orange-600" },
+                                      { val: "Maj", color: "bg-red-600" },
+                                    ].map((opt) => (
+                                      <div
+                                        key={opt.val}
+                                        className={`
+                                                                        w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black cursor-pointer border transition-all shadow-sm
+                                                                        ${type ===
+                                            opt.val
+                                            ? `${opt.color} text-white border-transparent scale-105 shadow-md ring-2 ring-slate-200 ring-offset-1`
+                                            : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                          }
+                                                                    `}
+                                        onClick={() => {
+                                          handleChecklistChange(index, "findings", opt.val);
+                                          // Also persist clause so AuditFindings can group correctly
+                                          handleChecklistChange(index, "clause", item.clause);
+                                        }}
+
+                                      >
+                                        {opt.val}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </TableCell>
+
+                                {/* Evidence */}
+                                <TableCell className="p-3 align-top">
+                                  <div className="flex flex-col h-full">
+                                    {!["OFI", "Min", "Maj"].includes(type) && (
+                                      <Textarea
+                                        className="min-h-[100px] text-sm resize-y border-slate-200 bg-slate-50/50 focus:bg-white shadow-sm transition-colors placeholder:text-slate-400 p-3"
+                                        placeholder="Documented info / records checked..."
+                                        value={checklistData[index]?.evidence || ""}
+                                        onChange={(e) =>
+                                          handleChecklistChange(
+                                            index,
+                                            "evidence",
+                                            e.target.value,
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </>
+                            )}
                           </TableRow>
 
                           {/* Extended findings conditionally */}
@@ -4111,13 +4501,25 @@ const AuditExecute = () => {
           >
             Cancel
           </Button>
-          <Button
-            size="lg"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 px-8 shadow-sm"
-            onClick={handleSubmit}
-          >
-            <Save className="w-5 h-5" /> Save Audit Progress
-          </Button>
+          <div className="flex items-center gap-3">
+            {(template.type === 'checklist' || template.isTripleMapping || template.type === 'clause-checklist') && (
+              <Button
+                variant={isEditMode ? "secondary" : "outline"}
+                className={`flex items-center gap-2 ${isEditMode ? 'bg-amber-500 hover:bg-amber-600 text-white border-transparent' : ''}`}
+                onClick={() => setIsEditMode(!isEditMode)}
+              >
+                <Edit className="w-4 h-4" />
+                {isEditMode ? "Done Editing" : "Edit Questions"}
+              </Button>
+            )}
+            <Button
+              size="lg"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 px-8 shadow-sm"
+              onClick={handleSubmit}
+            >
+              <Save className="w-5 h-5" /> Save Audit Progress
+            </Button>
+          </div>
         </div>
       </div>
     </div>

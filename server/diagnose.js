@@ -34,16 +34,28 @@ async function diagnose() {
         console.log('\nCurrent DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 20) + '...');
     }
 
-    // 2. Check Email service
-    console.log('\n2. Testing Email Service (Nodemailer)...');
     try {
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
+        const transporterConfig = process.env.SMTP_HOST ? {
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || '587'),
+            secure: process.env.SMTP_PORT === '465',
             auth: {
-                user: 'subs.safetynett@gmail.com',
-                pass: 'wdve zudb tzwf spyo'
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            },
+            tls: {
+                ciphers: 'SSLv3',
+                rejectUnauthorized: false
             }
-        });
+        } : {
+            service: process.env.SMTP_SERVICE || 'gmail',
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
+        };
+
+        const transporter = nodemailer.createTransport(transporterConfig);
 
         await transporter.verify();
         console.log('✅ Nodemailer transporter is ready.');

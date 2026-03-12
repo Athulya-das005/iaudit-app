@@ -361,8 +361,8 @@ export default function Auth() {
                                             onChange={(e) => setOtpCode(e.target.value)}
                                             className="h-14 text-center text-2xl tracking-[0.5em] font-mono bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B]"
                                         />
-                                        <p className="text-xs text-[#6B7280] mt-1">
-                                            If you don't see the email, please check your junk or spam folder.
+                                        <p className="text-xs text-[#6B7280] mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-center">
+                                            <strong className="text-yellow-700">Note:</strong> If you don't see the email, please check your <strong className="text-yellow-700">junk or spam folder</strong>.
                                         </p>
                                     </div>
 
