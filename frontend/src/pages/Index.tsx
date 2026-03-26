@@ -212,22 +212,6 @@ const Index = () => {
 
   const stats = [
     {
-      label: "Self Assessments",
-      value: selfAssessments.length,
-      icon: ShieldCheck,
-      trend: "+22%",
-      trendColor: "text-emerald-500 bg-emerald-50",
-      iconColor: "text-emerald-600 bg-emerald-50"
-    },
-    {
-      label: "Gap Analyses",
-      value: gapAnalyses.length,
-      icon: Search,
-      trend: "+10%",
-      trendColor: "text-emerald-500 bg-emerald-50",
-      iconColor: "text-emerald-600 bg-emerald-50"
-    },
-    {
       label: "Companies",
       value: companies.length,
       icon: Building2,
@@ -240,6 +224,22 @@ const Index = () => {
       value: totalSites,
       icon: MapPin,
       trend: "+5%",
+      trendColor: "text-emerald-500 bg-emerald-50",
+      iconColor: "text-emerald-600 bg-emerald-50"
+    },
+    {
+      label: "Gap Analyses",
+      value: gapAnalyses.length,
+      icon: Search,
+      trend: "+10%",
+      trendColor: "text-emerald-500 bg-emerald-50",
+      iconColor: "text-emerald-600 bg-emerald-50"
+    },
+    {
+      label: "Self Assessments",
+      value: selfAssessments.length,
+      icon: ShieldCheck,
+      trend: "+22%",
       trendColor: "text-emerald-500 bg-emerald-50",
       iconColor: "text-emerald-600 bg-emerald-50"
     },

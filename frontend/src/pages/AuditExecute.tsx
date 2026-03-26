@@ -366,7 +366,8 @@ const AuditExecute = () => {
     if (!template || template.type !== "clause-checklist") return [];
     if (explicitlySelectedClauses.length > 0) {
       // Map to generic struct for table render containing array of available titles
-      return explicitlySelectedClauses.filter((c) => !c.isHeading);
+      // We now allow headings if they were specifically selected in the schedule
+      return explicitlySelectedClauses;
     }
     const all: ClauseMatrixRow[] = [];
     (template.content as ClauseChecklistContent[]).forEach((c) => {

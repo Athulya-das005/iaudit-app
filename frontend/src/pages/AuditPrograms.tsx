@@ -42,6 +42,7 @@ import { CLAUSE_MATRIX, ClauseMatrixRow } from "@/data/clauseMapping";
 
 const AuditPrograms = () => {
     const [view, setView] = useState<"list" | "create" | "edit" | "view">("list");
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
     const [auditPrograms, setAuditPrograms] = useState<any[]>([]);
     const [deleteId, setDeleteId] = useState<number | null>(null);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -54,6 +55,14 @@ const AuditPrograms = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [standardFilter, setStandardFilter] = useState("all");
     const [siteFilter, setSiteFilter] = useState("all");
+
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
+    const isMobile = windowWidth < 768;
 
     // Form state
     const [currentId, setCurrentId] = useState<number | null>(null);
@@ -187,7 +196,7 @@ const AuditPrograms = () => {
     };
 
     const toggleCell = (row: number | string, col: number) => {
-        if (typeof row === 'number' && CLAUSE_MATRIX[row]?.isHeading || view === "view") return;
+        if (view === "view") return;
         const key = `${row}-${col}`;
         setSelectedCells(prev => ({
             ...prev,
@@ -475,8 +484,8 @@ const AuditPrograms = () => {
 
                 if (clause.isHeading) {
                     row.push({
-                        content: "",
-                        styles: { fillColor: [33, 56, 71] }
+                        content: isSelected ? "X" : "",
+                        styles: { fillColor: [33, 56, 71], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' }
                     });
                 } else {
                     row.push(isSelected ? "X" : "");
@@ -627,7 +636,7 @@ const AuditPrograms = () => {
 
                 if (clause.isHeading) {
                     cells.push(new DocxTableCell({
-                        children: [new Paragraph({ text: "" })],
+                        children: [new Paragraph({ text: isSelected ? "X" : "", alignment: AlignmentType.CENTER, children: [new TextRun({ text: isSelected ? "X" : "", color: "FFFFFF", bold: true })] })],
                         shading: { fill: "213847" }
                     }));
                 } else {
@@ -1165,14 +1174,18 @@ const AuditPrograms = () => {
                                             <tr>
                                                 {/* Dynamic Headers for Standards */}
                                                 {selectedStandards.map((std, colIdx) => {
-                                                    const colWidth = selectedStandards.length === 1 ? '350px' : '180px';
+                                                    const baseWidth = selectedStandards.length === 1 ? 350 : 180;
+                                                    const colWidth = isMobile ? `${Math.min(baseWidth, 140)}px` : `${baseWidth}px`;
                                                     const leftOffset = colIdx * parseInt(colWidth);
 
                                                     const label = std.includes("9001") ? "ISO 9001:2015" : std.includes("14001") ? "ISO 14001:2015" : std.includes("45001") ? "ISO 45001:2018" : "CLAUSE NAME";
                                                     return (
                                                         <th key={std}
-                                                            className="sticky z-20 bg-slate-100 h-10 px-4 text-[11px] font-black tracking-widest text-[#213847] border-b border-r border-slate-200 uppercase align-middle"
-                                                            style={{ left: `${leftOffset}px`, width: colWidth, minWidth: colWidth, maxWidth: colWidth }}
+                                                            className={cn(
+                                                                "bg-slate-100 h-10 px-4 text-[11px] font-black tracking-widest text-[#213847] border-b border-r border-slate-200 uppercase align-middle",
+                                                                !isMobile && "sticky z-20"
+                                                            )}
+                                                            style={{ left: !isMobile ? `${leftOffset}px` : undefined, width: colWidth, minWidth: colWidth, maxWidth: colWidth }}
                                                         >
                                                             {label}
                                                         </th>
@@ -1206,7 +1219,8 @@ const AuditPrograms = () => {
                                                     <tr key={clause.id} className="group hover:bg-slate-50 transition-colors">
                                                         {/* Active Standard Columns */}
                                                         {selectedStandards.map((std, colIdx) => {
-                                                            const colWidth = selectedStandards.length === 1 ? '350px' : '180px';
+                                                            const baseWidth = selectedStandards.length === 1 ? 350 : 180;
+                                                            const colWidth = isMobile ? `${Math.min(baseWidth, 140)}px` : `${baseWidth}px`;
                                                             const leftOffset = colIdx * parseInt(colWidth);
 
                                                             const isIso9001 = std.includes("9001");
@@ -1223,12 +1237,13 @@ const AuditPrograms = () => {
                                                             return (
                                                                 <td key={`${clause.id}-${std}`}
                                                                     className={cn(
-                                                                        "sticky z-10 text-[11px] py-3 px-4 border-r border-b border-slate-200 transition-colors align-middle",
+                                                                        "text-[11px] py-3 px-4 border-r border-b border-slate-200 transition-colors align-middle",
+                                                                        !isMobile && "sticky z-10",
                                                                         clause.isHeading ? "bg-[#213847] text-white font-black uppercase tracking-wide border-[#213847]" : "font-semibold text-slate-600 bg-white group-hover:bg-slate-50",
                                                                         !clause.isHeading && colIdx === 0 && "pl-6",
                                                                         isMissing && !clause.isHeading && "italic text-slate-400 bg-slate-50 group-hover:bg-slate-100"
                                                                     )}
-                                                                    style={{ left: `${leftOffset}px`, width: colWidth, minWidth: colWidth, maxWidth: colWidth }}
+                                                                    style={{ left: !isMobile ? `${leftOffset}px` : undefined, width: colWidth, minWidth: colWidth, maxWidth: colWidth }}
                                                                 >
                                                                     {cellText}
                                                                 </td>
@@ -1239,23 +1254,28 @@ const AuditPrograms = () => {
                                                         {periods.map((_, colIndex) => {
                                                             const isChecked = selectedCells[`${rowIndex}-${colIndex}`];
                                                             return (
-                                                                <td key={`check-${colIndex}`} className="p-1 border-b border-slate-100 align-middle">
+                                                                <td key={`check-${colIndex}`} 
+                                                                    className={cn(
+                                                                        "p-1 border-b border-slate-100 align-middle",
+                                                                        clause.isHeading ? "bg-[#213847] border-[#213847]" : "bg-white"
+                                                                    )}
+                                                                >
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => toggleCell(rowIndex, colIndex)}
-                                                                        disabled={clause.isHeading || view === "view"}
+                                                                        disabled={view === "view"}
                                                                         className={cn(
                                                                             "w-full h-8 rounded-md border flex items-center justify-center transition-all duration-200",
-                                                                            clause.isHeading ? "bg-transparent border-transparent opacity-0 cursor-default" : (
-                                                                                isChecked
-                                                                                    ? "bg-emerald-100/80 border-emerald-400 text-emerald-600 shadow-sm shadow-emerald-500/10 hover:bg-emerald-200/80 cursor-pointer"
+                                                                            isChecked
+                                                                                ? "bg-emerald-100/80 border-emerald-400 border-2 text-emerald-600 shadow-sm shadow-emerald-500/10 hover:bg-emerald-200/80 cursor-pointer"
+                                                                                : clause.isHeading
+                                                                                    ? "bg-white/5 border-white border-2 hover:border-emerald-400 hover:bg-emerald-50/20 cursor-pointer"
                                                                                     : "bg-white border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/50 cursor-pointer hover:shadow-inner"
-                                                                            )
                                                                         )}
                                                                     >
-                                                                        {!clause.isHeading && isChecked && (
+                                                                        {isChecked && (
                                                                             <div className="animate-in zoom-in-75 duration-200">
-                                                                                <Check className="w-4 h-4 stroke-[4px]" />
+                                                                                <Check className={cn("w-4 h-4 stroke-[4px]", clause.isHeading && "text-emerald-500")} />
                                                                             </div>
                                                                         )}
                                                                     </button>
