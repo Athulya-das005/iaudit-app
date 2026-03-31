@@ -56,23 +56,22 @@ app.use('/api', (req, res, next) => {
 const router = express.Router();
 
 // Email Transporter Configuration
-const transporterConfig = process.env.SMTP_HOST ? {
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_PORT === '465',
+const smtpHost = process.env.SMTP_HOST || 'smtp.office365.com';
+const smtpPort = process.env.SMTP_PORT || '587';
+const smtpUser = process.env.SMTP_USER || 'noreply@iaudit.global';
+const smtpPass = process.env.SMTP_PASS || 'nfqhvzbfydxwpfsy';
+
+const transporterConfig = {
+    host: smtpHost,
+    port: parseInt(smtpPort),
+    secure: smtpPort === '465',
     auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+        user: smtpUser,
+        pass: smtpPass
     },
     tls: {
         ciphers: 'SSLv3',
         rejectUnauthorized: false
-    }
-} : {
-    service: process.env.SMTP_SERVICE || 'gmail',
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
     }
 };
 
@@ -457,7 +456,7 @@ const sendOtpLogic = async (req, res) => {
         const mailOptions = {
             from: {
                 name: 'iAudit Global',
-                address: process.env.SMTP_USER
+                address: smtpUser
             },
             to: email,
             subject: 'Your Account Verification Code',
@@ -713,7 +712,7 @@ app.post('/api/users', async (req, res) => {
         // Send welcome email if requested — fire and forget, don't block the response
         if (sendWelcomeEmail) {
             const mailOptions = {
-                from: process.env.SMTP_USER,
+                from: smtpUser,
                 to: email,
                 subject: 'Welcome to iAudit Global!',
                 html: `
