@@ -23,7 +23,8 @@ import autoTable from "jspdf-autotable";
 import { Document, Packer, Paragraph, TextRun, ImageRun, Table as DocxTable, TableRow as DocxTableRow, TableCell as DocxTableCell, WidthType, BorderStyle, AlignmentType, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
-import { auditTemplates, ChecklistContent } from "@/data/auditTemplates";
+import { auditTemplates, ChecklistContent, ClauseChecklistContent, SectionContent } from "@/data/auditTemplates";
+import { CLAUSE_MATRIX, ClauseMatrixRow } from "@/data/clauseMapping";
 import ReusablePagination from "@/components/ReusablePagination";
 
 const AuditList = () => {
@@ -78,281 +79,503 @@ const AuditList = () => {
         return typeof plan.auditData === 'string' ? JSON.parse(plan.auditData) : plan.auditData;
     };
 
-    const handleDownloadPDF = async (planStub: any) => {
+        const handleDownloadPDF = async (planStub: any) => {
         setLoading(true);
         try {
             const res = await fetch(`${API_BASE_URL}/api/audit-plans/${planStub.id}`);
             if (!res.ok) throw new Error("Failed to fetch full plan details");
             const plan = await res.json();
-
-            const doc = new jsPDF();
-            const pageW = doc.internal.pageSize.getWidth();
-            const pageH = doc.internal.pageSize.getHeight();
-            const margin = 15;
-            const darkColor: [number, number, number] = [33, 56, 71];
-            const greenColor: [number, number, number] = [16, 185, 129];
-            const amberColor: [number, number, number] = [245, 158, 11];
-            const redColor: [number, number, number] = [220, 38, 38];
-            const THEME_COLOR = darkColor;
-
             const template = auditTemplates.find(t => t.id === plan.templateId);
             const auditData = getAuditData(plan);
-            const fileName = `Audit_Report_${plan.auditName?.replace(/[^a-z0-9]/gi, '_') || plan.id}`;
 
-            let y = 10;
-            const checkPage = (height: number) => {
-                if (y + height > pageH - 20) {
-                    doc.addPage();
-                    y = margin;
-                    return true;
-                }
-                return false;
+            const previousFindings = auditData.previousFindings || '';
+            const detailsOfChanges = auditData.detailsOfChanges || [];
+            const participants = auditData.participants || [];
+            const summaryCounts = auditData.summaryCounts || { compliant: '0', ofi: '0', minor: '0', major: '0', positive: '0' };
+            const auditFindings = auditData.auditFindings || [];
+            const opportunities = auditData.opportunities || [];
+            const nonConformances = auditData.nonConformances || [];
+            const editableChecklist = auditData.editableChecklist || template?.content || [];
+            const checklistData = auditData.checklistData || {};
+            const extraChecklistItems = auditData.extraChecklistItems || {};
+            const clauseData = auditData.clauseData || {};
+            const sectionData = auditData.sectionData || {};
+            const processAudits = auditData.processAudits || [];
+            const clauseFiles = auditData.clauseFiles || {};
+            const genericFiles = auditData.genericFiles || {};
+            const positiveAspects = auditData.positiveAspects || [];
+
+            const showISO9001 = !!plan?.auditProgram?.isoStandard?.includes("9001");
+            const showISO14001 = !!plan?.auditProgram?.isoStandard?.includes("14001");
+            const showISO45001 = !!plan?.auditProgram?.isoStandard?.includes("45001");
+            const activeCount = [showISO9001, showISO14001, showISO45001].filter(Boolean).length;
+            const clauseSchedule = typeof plan?.clauseSchedule === 'string' ? JSON.parse(plan.clauseSchedule) : (plan?.clauseSchedule || {});
+
+            const isClauseSelected = (clauseId: string) => {
+              if (activeCount === 0) return true;
+              if (showISO45001 && clauseSchedule['ISO45001']?.includes(clauseId)) return true;
+              if (showISO14001 && clauseSchedule['ISO14001']?.includes(clauseId)) return true;
+              if (showISO9001 && clauseSchedule['ISO9001']?.includes(clauseId)) return true;
+              return false;
             };
 
-            const section = (title: string, currentY: number): number => {
-                const checkedY = checkPage(15) ? margin : currentY;
-                doc.setFillColor(...darkColor);
-                doc.rect(margin, checkedY, pageW - margin * 2, 8, 'F');
-                doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
-                doc.text(title.toUpperCase(), margin + 3, checkedY + 5.5);
-                doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal');
-                return checkedY + 12;
-            };
-
-            // --- Logo ---
-            try {
-                const response = await fetch("/iAudit Global-01.png");
-                const blob = await response.blob();
-                const base64Compressed = await new Promise<string>((resolve, reject) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement("canvas");
-                        canvas.width = img.width; canvas.height = img.height;
-                        const ctx = canvas.getContext("2d")!;
-                        ctx.drawImage(img, 0, 0);
-                        resolve(canvas.toDataURL("image/png"));
-                    };
-                    img.onerror = reject;
-                    img.src = URL.createObjectURL(blob);
-                });
-                doc.addImage(base64Compressed, 'PNG', margin, 8, 25, 20, undefined, 'FAST');
-            } catch (e) { }
-
-            // --- Header Banner ---
-            doc.setFillColor(...darkColor);
-            doc.rect(45, 10, 165, 18, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(16);
-            doc.setFont('helvetica', 'bold');
-            doc.text('INTERNAL AUDIT REPORT', 52, 22);
-            y = 40;
-
-            // --- 1. Audit Information ---
-            y = section('1. AUDIT INFORMATION', y);
-            const leadName = plan.leadAuditor ? `${plan.leadAuditor.firstName} ${plan.leadAuditor.lastName}` : (plan.leadAuditorName || '—');
-            autoTable(doc, {
-                startY: y,
-                body: [
-                    ['Audit Name', plan.auditName || '—', 'Date', plan.date ? format(new Date(plan.date), 'PPP') : '—'],
-                    ['Template', template?.title || '—', 'Location', plan.location || '—'],
-                    ['Lead Auditor', leadName, 'Ref No', plan.executionId || 'Standalone'],
-                    ['Criteria', plan.criteria || '—', 'Status', plan.status || 'In Progress'],
-                ],
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 3 },
-                columnStyles: { 0: { fontStyle: 'bold', fillColor: [245, 247, 249], cellWidth: 35 }, 2: { fontStyle: 'bold', fillColor: [245, 247, 249], cellWidth: 25 } },
-                margin: { left: margin, right: margin }
+            const clausesToRender = (typeof CLAUSE_MATRIX !== 'undefined' ? CLAUSE_MATRIX : []).filter(c => {
+                if (activeCount === 0) return true;
+                if (c.isHeading) return true;
+                return isClauseSelected(c.id);
             });
-            y = (doc as any).lastAutoTable.finalY + 8;
 
-            if (plan.scope || plan.objective) {
-                checkPage(40);
-                doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('Scope:', margin, y);
-                y += 5; doc.setFont('helvetica', 'normal');
-                const scopeLines = doc.splitTextToSize(plan.scope || '—', pageW - margin * 2);
-                doc.text(scopeLines, margin, y);
-                y += (scopeLines.length * 4) + 5;
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const darkColor: [number, number, number] = [33, 56, 71];
+    const greenColor: [number, number, number] = [16, 185, 129];
+    const amberColor: [number, number, number] = [245, 158, 11];
+    const redColor: [number, number, number] = [239, 68, 68];
 
-                doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('Objective:', margin, y);
-                y += 5; doc.setFont('helvetica', 'normal');
-                const objLines = doc.splitTextToSize(plan.objective || '—', pageW - margin * 2);
-                doc.text(objLines, margin, y);
-                y += (objLines.length * 4) + 10;
+    // ---------- helpers ----------
+    const section = (title: string, y: number): number => {
+      if (y > pageH - 40) { doc.addPage(); y = margin; }
+      doc.setFillColor(...darkColor);
+      doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+      doc.text(title, margin + 3, y + 5.5);
+      doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal');
+      return y + 12;
+    };
+
+    const checkPage = (y: number, need = 20): number => {
+      if (y + need > pageH - 25) { doc.addPage(); return margin; }
+      return y;
+    };
+
+    // ---- Try to load logo - compressed via canvas to prevent huge file sizes ----
+    let logoDataUrl: string | null = null;
+    let logoRatio = 0.3;
+    try {
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.src = '/iAudit Global-01.png';
+        img.onload = () => {
+          const MAX = 120;
+          const canvas = document.createElement('canvas');
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+            else { width = Math.round(width * MAX / height); height = MAX; }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          logoDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          logoRatio = height / width;
+          resolve();
+        };
+        img.onerror = () => resolve();
+      });
+    } catch { }
+
+    // ---- PAGE 1: COVER ----
+    let y = margin;
+    if (logoDataUrl) {
+      const lw = 50; const lh = lw * logoRatio;
+      doc.addImage(logoDataUrl, 'PNG', pageW / 2 - lw / 2, y, lw, lh);
+      y += lh + 8;
+    } else {
+      y += 10;
+    }
+    doc.setFontSize(22); doc.setFont('helvetica', 'bold'); doc.setTextColor(...darkColor);
+    doc.text('Audit Report', pageW / 2, y, { align: 'center' });
+    y += 8;
+    doc.setFontSize(13); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80);
+    doc.text(plan.auditName || '', pageW / 2, y, { align: 'center' });
+    y += 10;
+    doc.setFontSize(9); doc.setTextColor(130, 130, 130);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageW / 2, y, { align: 'center' });
+    y += 14;
+
+    // ---- 1. Audit Information ----
+    y = section('1. AUDIT INFORMATION', y);
+    const leadName = plan.leadAuditor ? `${plan.leadAuditor.firstName} ${plan.leadAuditor.lastName}` : (plan.leadAuditorName || '—');
+    const auditeeStr = Array.isArray(plan.auditees)
+      ? plan.auditees.map((a: any) => typeof a === 'string' ? a : `${a.firstName || ''} ${a.lastName || ''}`.trim()).join(', ')
+      : (plan.auditees || '—');
+    autoTable(doc, {
+      startY: y,
+      body: [
+        ['Audit Name', plan.auditName || '—'],
+        ['Template', template.title || '—'],
+        ['Site / Location', plan.site?.name || plan.location || '—'],
+        ['Date', plan.date ? format(new Date(plan.date), 'PPP') : '—'],
+        ['Lead Auditor', leadName],
+        ['Auditees', auditeeStr],
+        ['Standard / Criteria', plan.criteria || plan.standard || '—'],
+        ['Objective', plan.objective || '—'],
+        ['Scope', plan.scope || '—'],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 4 },
+      columnStyles: { 0: { fontStyle: 'bold', fillColor: [240, 243, 246], cellWidth: 52 } }
+    });
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // ---- 2. Previous Findings ----
+    y = section('2. PREVIOUS FINDINGS', y);
+    if (previousFindings?.trim()) {
+      doc.setFontSize(9); doc.setTextColor(40, 40, 40);
+      const pfLines = doc.splitTextToSize(previousFindings, pageW - margin * 2);
+      pfLines.forEach((line: string) => { y = checkPage(y, 6); doc.text(line, margin, y); y += 5; });
+    } else {
+      doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+      doc.text('No previous findings recorded.', margin, y); y += 6;
+    }
+    y += 6;
+
+    // ---- 3. Details of Changes ----
+    y = section('3. DETAILS OF CHANGES', y);
+    autoTable(doc, {
+      startY: y,
+      head: [['Item', 'Action Required', 'Notes']],
+      body: detailsOfChanges.map(d => [d.item, d.actionRequired ? 'Yes' : 'No', d.notes || '—']),
+      theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: darkColor },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 1 && data.cell.raw === 'Yes')
+          data.cell.styles.textColor = [239, 68, 68];
+      }
+    });
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // ---- 4. Audit Participants ----
+    y = section('4. AUDIT PARTICIPANTS', y);
+    const filledParticipants = participants.filter(p => p.name?.trim());
+    if (filledParticipants.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Name', 'Position', 'Opening', 'Closing', 'Interviewed']],
+        body: filledParticipants.map(p => [p.name || '—', p.position || '—', p.opening ? '✓' : '', p.closing ? '✓' : '', p.interviewed || '—']),
+        theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: darkColor }
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+      doc.text('No participants recorded.', margin, y); y += 12;
+    }
+
+    // ---- 5. Global Findings / Summary ----
+    y = section('5. GLOBAL FINDINGS SUMMARY', y);
+    autoTable(doc, {
+      startY: y,
+      head: [['Compliant', 'OFI', 'Minor NCR', 'Major NCR', 'Positive Aspects']],
+      body: [[summaryCounts.compliant || '0', summaryCounts.ofi || '0', summaryCounts.minor || '0', summaryCounts.major || '0', summaryCounts.positive || '0']],
+      theme: 'grid', styles: { fontSize: 10, halign: 'center' },
+      headStyles: { fillColor: greenColor }
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+    // Findings log
+    const filledAF = auditFindings.filter(f => f.details?.trim());
+    if (filledAF.length > 0) {
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...darkColor);
+      doc.text('Audit Findings Log', margin, y); y += 5; doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
+      autoTable(doc, {
+        startY: y,
+        head: [['Ref No', 'Clause No', 'Category', 'Details']],
+        body: filledAF.map(f => [f.refNo || '—', f.clauseNo || '—', f.category || '—', f.details || '—']),
+        theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: darkColor }
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else { y += 6; }
+
+    // ---- 6. Opportunities for Improvement (OFI) ----
+    y = section('6. OPPORTUNITIES FOR IMPROVEMENT (OFI)', y);
+    const ofiItems = opportunities.filter(o => o.opportunity?.trim());
+    if (ofiItems.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Ref', 'Standard Clause', 'Area / Process', 'Opportunity']],
+        body: ofiItems.map(o => [o.id, o.standardClause || '—', o.areaProcess || '—', o.opportunity || '—']),
+        theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: amberColor }
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+      doc.text('No OFIs recorded.', margin, y); y += 12;
+    }
+
+    // ---- 7. Non-Conformances (NCR) ----
+    y = section('7. NON-CONFORMANCES (NCR)', y);
+    const ncrItems = nonConformances.filter(n => n.statement?.trim());
+    if (ncrItems.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Ref', 'Standard Clause', 'Area / Process', 'NC Statement', 'Due Date', 'Action By']],
+        body: ncrItems.map(n => [n.id, n.standardClause || '—', n.areaProcess || '—', n.statement || '—', n.dueDate || '—', n.actionBy || '—']),
+        theme: 'grid', styles: { fontSize: 8, overflow: 'linebreak' }, headStyles: { fillColor: redColor }
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+      doc.text('No non-conformances recorded.', margin, y); y += 12;
+    }
+
+    // ---- 8. Template Fields (filled rows only, NC details inline) ----
+    if (template.type === 'checklist') {
+      y = section('8. AUDIT CHECKLIST FINDINGS', y);
+      // lblStyle: blue label cell style
+      const lblStyle = { fillColor: darkColor as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8, cellPadding: 3 };
+      const bodyRows: any[] = [];
+      const imgRowMap = new Map<number, string>(); // rowIndex -> image data URL
+
+      (editableChecklist as ChecklistContent[]).forEach((item, idx) => {
+        const d = (checklistData[idx] || {}) as any;
+        if (!d.findings) return; // skip unfilled
+        // Main finding row
+        bodyRows.push([item.clause, item.question, d.findings]);
+        // Evidence sub-row
+        if (d.evidence?.trim()) {
+          bodyRows.push([{ content: 'Evidence', styles: lblStyle }, { content: d.evidence, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+        }
+        // NC detail sub-rows (only when non-compliant)
+        if (d.findings !== 'C') {
+          if (d.description?.trim()) bodyRows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.correction?.trim()) bodyRows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.rootCause?.trim()) bodyRows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (d.correctiveAction?.trim()) bodyRows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+        }
+        // Image sub-row
+        const clauseImgs = (clauseFiles[item.clause] || []).filter((m) => m.type.startsWith('image/'));
+        if (clauseImgs.length > 0) {
+          imgRowMap.set(bodyRows.length, clauseImgs[0].data);
+          bodyRows.push([{ content: '', colSpan: 3, styles: { minCellHeight: 55, cellPadding: 2 } }]);
+        }
+      });
+
+      // Also append extra questions added during the audit
+      Object.entries(extraChecklistItems).forEach(([clause, extras]: [string, any]) => {
+        extras.forEach((eq: any) => {
+          if (!eq.question?.trim() && !eq.findings) return;
+          bodyRows.push([clause, eq.question || '(no question text)', eq.findings || '—']);
+          if (eq.evidence?.trim()) bodyRows.push([{ content: 'Evidence', styles: lblStyle }, { content: eq.evidence, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+          if (eq.findings !== 'C') {
+            if (eq.correction?.trim()) bodyRows.push([{ content: 'Correction', styles: lblStyle }, { content: eq.correction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (eq.rootCause?.trim()) bodyRows.push([{ content: 'Root Cause', styles: lblStyle }, { content: eq.rootCause, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (eq.correctiveAction?.trim()) bodyRows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: eq.correctiveAction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
+          }
+        });
+      });
+
+      if (bodyRows.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No findings recorded yet.', margin, y); y += 12;
+      } else {
+        autoTable(doc, {
+          startY: y,
+          head: [['Clause', 'Question', 'Finding']],
+          body: bodyRows, theme: 'grid',
+          styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+          columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 22 } },
+          headStyles: { fillColor: darkColor },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 2 && !imgRowMap.has(data.row.index)) {
+              const f = String(data.cell.raw || '');
+              if (f === 'C') data.cell.styles.textColor = [16, 185, 129];
+              else if (f === 'OFI') data.cell.styles.textColor = [245, 158, 11];
+              else if (f === 'Min' || f === 'Maj') data.cell.styles.textColor = [239, 68, 68];
             }
-
-            // --- 2. Previous Findings & Changes ---
-            if (auditData.previousFindings || auditData.detailsOfChanges) {
-                y = section('2. PREVIOUS FINDINGS & CHANGES', y);
-                if (auditData.previousFindings) {
-                    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('Previous Findings:', margin, y);
-                    y += 5; doc.setFont('helvetica', 'normal');
-                    const pfLines = doc.splitTextToSize(auditData.previousFindings, pageW - margin * 2);
-                    doc.text(pfLines, margin, y);
-                    y += (pfLines.length * 4) + 8;
-                }
-                if (auditData.detailsOfChanges && auditData.detailsOfChanges.length > 0) {
-                    autoTable(doc, {
-                        startY: y,
-                        head: [['Item', 'Action Required', 'Notes']],
-                        body: auditData.detailsOfChanges.map((d: any) => [d.item, d.actionRequired ? 'Yes' : 'No', d.notes || '—']),
-                        theme: 'grid', styles: { fontSize: 8 }, headStyles: { fillColor: darkColor }
-                    });
-                    y = (doc as any).lastAutoTable.finalY + 10;
-                }
+          },
+          didDrawCell: (data) => {
+            if (data.section === 'body' && data.column.index === 0 && imgRowMap.has(data.row.index)) {
+              const imgData = imgRowMap.get(data.row.index)!;
+              try {
+                const fmt = imgData.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+                // full-width image across all 3 cols, positioned at the row's cell
+                const tblW = pageW - margin * 2;
+                doc.addImage(imgData, fmt, data.cell.x + 2, data.cell.y + 2, tblW - 4, 50);
+              } catch (e) { console.error('clause img row failed', e); }
             }
+          }
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    } else if (template.type === 'clause-checklist') {
+      y = section('8. CLAUSE CHECKLIST', y);
+      const checklistToUse = (editableChecklist as ClauseChecklistContent[]).length > 0
+        ? (editableChecklist as ClauseChecklistContent[])
+        : (template.content as ClauseChecklistContent[]);
 
-            // --- 3. Audit Participants ---
-            const filledParticipants = auditData.participants?.filter((p: any) => p.name?.trim());
-            if (filledParticipants?.length > 0) {
-                y = section('3. AUDIT PARTICIPANTS', y);
-                autoTable(doc, {
-                    startY: y,
-                    head: [['Name', 'Position', 'Opening', 'Closing', 'Interviewed']],
-                    body: filledParticipants.map((p: any) => [p.name || '—', p.position || '—', p.opening ? '✓' : '', p.closing ? '✓' : '', p.interviewed || '—']),
-                    theme: 'grid', styles: { fontSize: 8 }, headStyles: { fillColor: darkColor }
-                });
-                y = (doc as any).lastAutoTable.finalY + 10;
+      const filledClauses = checklistToUse.filter(c => (clauseData[c.clauseId] || {} as any).findingType);
+      if (filledClauses.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No findings recorded yet.', margin, y); y += 12;
+      } else {
+        autoTable(doc, {
+          startY: y, head: [['Clause', 'Requirement', 'Status', 'Evidence']],
+          body: filledClauses.map(c => { 
+            const d = (clauseData[c.clauseId] || {}) as any; 
+            // Join sub clauses with newlines
+            const requirement = [c.title, ...(c.subClauses || [])].filter(Boolean).join('\n');
+            return [c.clauseId, requirement, d.findingType || '—', d.evidence || '—']; 
+          }),
+          theme: 'grid', styles: { fontSize: 8, overflow: 'linebreak' },
+          columnStyles: { 0: { cellWidth: 18 }, 2: { cellWidth: 18 } }, headStyles: { fillColor: darkColor },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === 2) {
+              const f = data.cell.raw as string;
+              if (f === 'C') data.cell.styles.textColor = [16, 185, 129];
+              else if (f === 'OFI') data.cell.styles.textColor = [245, 158, 11];
+              else if (f !== '—') data.cell.styles.textColor = [239, 68, 68];
             }
+          }
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    } else if (template.type === 'section') {
+      y = section('8. SECTION RESPONSES', y);
+      const filledSections = (template.content as SectionContent[]).filter((_, idx) => sectionData[idx]?.trim());
+      if (filledSections.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No responses recorded yet.', margin, y); y += 12;
+      } else {
+        const rows = (template.content as SectionContent[]).reduce<string[][]>((acc, sec, idx) => {
+          if (sectionData[idx]?.trim()) acc.push([sec.title || `Section ${idx + 1}`, sectionData[idx]]);
+          return acc;
+        }, []);
+        autoTable(doc, { startY: y, head: [['Section', 'Response']], body: rows, theme: 'grid', styles: { fontSize: 9 }, headStyles: { fillColor: darkColor } });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    } else if (template.type === 'process-audit') {
+      y = section('8. PROCESS AUDIT', y);
+      const filledPA = processAudits.filter(pa => pa.processArea?.trim() || pa.evidence?.trim());
+      if (filledPA.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No process audits recorded yet.', margin, y); y += 12;
+      } else {
+        autoTable(doc, {
+          startY: y, head: [['Process Area', 'Auditees', 'Evidence', 'Conclusion', 'Finding']],
+          body: filledPA.map(pa => [pa.processArea || '—', pa.auditees || '—', pa.evidence || '—', pa.conclusion || '—', (pa as any).findingType || '—']),
+          theme: 'grid', styles: { fontSize: 8, overflow: 'linebreak' }, headStyles: { fillColor: darkColor }
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    } else if (template.isTripleMapping) {
+      y = section(`8. INTEGRATED AUDIT MAPPING (${[showISO9001 && 'ISO 9001', showISO14001 && 'ISO 14001', showISO45001 && 'ISO 45001'].filter(Boolean).join(', ')})`, y);
+      const rows: any[] = [];
+      const lblStyle = { fillColor: darkColor as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8, cellPadding: 3 };
 
-            // --- 4. Findings Summary ---
-            if (auditData.summaryCounts || auditData.executiveSummary) {
-                y = section('4. AUDIT FINDINGS SUMMARY', y);
-                if (auditData.summaryCounts) {
-                    autoTable(doc, {
-                        startY: y,
-                        head: [['Compliant', 'OFI', 'Minor NCR', 'Major NCR', 'Positive Aspects']],
-                        body: [[auditData.summaryCounts.compliant || '0', auditData.summaryCounts.ofi || '0', auditData.summaryCounts.minor || '0', auditData.summaryCounts.major || '0', auditData.summaryCounts.positive || '0']],
-                        theme: 'grid', styles: { fontSize: 10, halign: 'center' }, headStyles: { fillColor: greenColor }
-                    });
-                    y = (doc as any).lastAutoTable.finalY + 8;
-                }
-                if (auditData.executiveSummary) {
-                    checkPage(30);
-                    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('Executive Summary:', margin, y);
-                    y += 5; doc.setFont('helvetica', 'normal');
-                    const lines = doc.splitTextToSize(auditData.executiveSummary, pageW - margin * 2);
-                    doc.text(lines, margin, y);
-                    y += (lines.length * 4.5) + 10;
-                }
+      CLAUSE_MATRIX.forEach((row, idx) => {
+        if (!isClauseSelected(row.id)) return;
+        
+        // Use editableChecklist if available to match UI
+        const questions = (editableChecklist as ChecklistContent[]).filter(q => q.clause === row.id);
+        
+        if (row.isHeading) {
+          const headingParts = [
+            showISO45001 && row.iso45001, 
+            showISO14001 && row.iso14001, 
+            showISO9001 && row.iso9001
+          ].filter(Boolean);
+          rows.push([{ content: headingParts.join(' / '), colSpan: activeCount + 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
+          return;
+        }
+
+        questions.forEach(q => {
+          const dIdx = editableChecklist.indexOf(q);
+          const d = (checklistData[dIdx] || {}) as any;
+          if (!d.findings) return;
+
+          const rowData = [
+            showISO45001 && row.iso45001,
+            showISO14001 && row.iso14001,
+            showISO9001 && row.iso9001,
+            d.findings,
+            d.evidence || '—'
+          ].filter(val => val !== false);
+
+          rows.push(rowData);
+
+          if (d.findings !== 'C') {
+            if (d.description?.trim()) rows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.correction?.trim()) rows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.rootCause?.trim()) rows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+            if (d.correctiveAction?.trim()) rows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: activeCount + 1, styles: { fontSize: 8, cellPadding: 3 } }]);
+          }
+        });
+      });
+
+      if (rows.length === 0) {
+        doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+        doc.text('No findings recorded yet.', margin, y); y += 12;
+      } else {
+        const head = [
+          showISO45001 && 'ISO 45001',
+          showISO14001 && 'ISO 14001',
+          showISO9001 && 'ISO 9001',
+          'Finding',
+          'Evidence'
+        ].filter(Boolean) as string[];
+
+        autoTable(doc, {
+          startY: y,
+          head: [head],
+          body: rows,
+          theme: 'grid',
+          styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+          columnStyles: { 
+            0: { cellWidth: activeCount === 1 ? 105 : activeCount === 2 ? 52 : 35 },
+            1: { cellWidth: activeCount === 2 ? 52 : 35 },
+            2: { cellWidth: 35 },
+            [activeCount]: { cellWidth: 15 },
+            [activeCount + 1]: { cellWidth: 'auto' } 
+          },
+          headStyles: { fillColor: darkColor },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index === activeCount) {
+              const f = String(data.cell.raw || '');
+              if (f === 'C') data.cell.styles.textColor = [16, 185, 129];
+              else if (f === 'OFI') data.cell.styles.textColor = [245, 158, 11];
+              else if (f === 'Min' || f === 'Maj') data.cell.styles.textColor = [239, 68, 68];
             }
+          }
+        });
+        y = (doc as any).lastAutoTable.finalY + 10;
+      }
+    }
 
-            // --- 5. Detailed Checklist Findings ---
-            if (auditData.checklistData || auditData.clauseData) {
-                y = section('5. DETAILED AUDIT FINDINGS', y);
-                const lblStyle = { fillColor: darkColor as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8, cellPadding: 3 };
-                const bodyRows: any[] = [];
+    // ---- 9. Evidence & Images ----
+    const allMedia = [...Object.values(clauseFiles).flat(), ...Object.values(genericFiles).flat()];
+    if (allMedia.length > 0) {
+      y = section('9. EVIDENCE & IMAGES', y);
+      for (const m of allMedia as any[]) {
+        y = checkPage(y, 60);
+        if (m.type.startsWith('image/')) {
+          try {
+            doc.addImage(m.data, m.type.split('/')[1].toUpperCase(), margin, y, 80, 60);
+            doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+            doc.text(m.name, margin, y + 63);
+            y += 70;
+          } catch (e) { console.error('PDF image embed failed', e); }
+        } else {
+          doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+          doc.text(`• ${m.name} (${m.type})`, margin, y); y += 7;
+        }
+      }
+    }
 
-                if (template?.type === 'checklist' || template?.type === 'clause-checklist') {
-                    const checklistToUse = (auditData.editableChecklist && auditData.editableChecklist.length > 0)
-                        ? auditData.editableChecklist
-                        : template.content;
+    // ---- Footer on every page ----
+    const totalPages = (doc.internal as any).getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8); doc.setTextColor(150, 150, 150);
+      doc.line(margin, pageH - 12, pageW - margin, pageH - 12);
+      doc.text(`${plan.auditName || 'Audit'} Report`, margin, pageH - 7);
+      doc.text(`Page ${i} of ${totalPages}`, pageW - margin, pageH - 7, { align: 'right' });
+    }
 
-                    checklistToUse.forEach((item: any, idx: number) => {
-                        const d = (auditData.checklistData?.[idx] || {}) as any;
-                        if (!d.findings) return; 
-                        
-                        bodyRows.push([item.clause || idx, item.question, d.findings]);
-                        if (d.evidence?.trim()) {
-                            bodyRows.push([{ content: 'Evidence', styles: lblStyle }, { content: d.evidence, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                        }
-                        if (d.findings !== 'C') {
-                            if (d.description?.trim()) bodyRows.push([{ content: 'Details', styles: lblStyle }, { content: d.description, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                            if (d.correction?.trim()) bodyRows.push([{ content: 'Correction', styles: lblStyle }, { content: d.correction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                            if (d.rootCause?.trim()) bodyRows.push([{ content: 'Root Cause', styles: lblStyle }, { content: d.rootCause, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                            if (d.correctiveAction?.trim()) bodyRows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: d.correctiveAction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                        }
-                    });
-
-                    // Add Extra Questions
-                    if (auditData.extraChecklistItems) {
-                        Object.entries(auditData.extraChecklistItems).forEach(([clause, extras]: any) => {
-                            extras.forEach((eq: any) => {
-                                if (!eq.question?.trim() && !eq.findings) return;
-                                bodyRows.push([clause, eq.question || '(custom question)', eq.findings || '—']);
-                                if (eq.evidence?.trim()) bodyRows.push([{ content: 'Evidence', styles: lblStyle }, { content: eq.evidence, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                                if (eq.findings !== 'C') {
-                                    if (eq.correction?.trim()) bodyRows.push([{ content: 'Correction', styles: lblStyle }, { content: eq.correction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                                    if (eq.rootCause?.trim()) bodyRows.push([{ content: 'Root Cause', styles: lblStyle }, { content: eq.rootCause, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                                    if (eq.correctiveAction?.trim()) bodyRows.push([{ content: 'Corrective Action', styles: lblStyle }, { content: eq.correctiveAction, colSpan: 2, styles: { fontSize: 8, cellPadding: 3 } }]);
-                                }
-                            });
-                        });
-                    }
-
-                    if (bodyRows.length > 0) {
-                        autoTable(doc, {
-                            startY: y,
-                            head: [['Clause', 'Audit Question', 'Finding']],
-                            body: bodyRows,
-                            theme: 'grid',
-                            styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
-                            columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 22 } },
-                            headStyles: { fillColor: darkColor as [number, number, number] },
-                            didParseCell: (data) => {
-                                if (data.section === 'body' && data.column.index === 2) {
-                                    const f = String(data.cell.raw || '');
-                                    if (f === 'C') data.cell.styles.textColor = greenColor;
-                                    else if (f === 'OFI') data.cell.styles.textColor = amberColor;
-                                    else if (f === 'Min' || f === 'Maj') data.cell.styles.textColor = redColor;
-                                }
-                            }
-                        });
-                        y = (doc as any).lastAutoTable.finalY + 10;
-                    }
-                }
-            }
-
-            // --- 6. Process Audits ---
-            if (auditData.processAudits?.length > 0 && auditData.processAudits.some((pa: any) => pa.processArea)) {
-                y = section('6. PROCESS AUDITS', y);
-                autoTable(doc, {
-                    startY: y,
-                    head: [['Process Area', 'Auditees', 'Evidence', 'Conclusion']],
-                    body: auditData.processAudits.map((pa: any) => [pa.processArea, pa.auditees, pa.evidence, pa.conclusion]),
-                    headStyles: { fillColor: darkColor as [number, number, number] },
-                    styles: { fontSize: 8 },
-                    theme: 'grid'
-                });
-                y = (doc as any).lastAutoTable.finalY + 10;
-            }
-
-            // --- 7. Opportunity & Excellence Summary ---
-            if (auditData.opportunities?.some((o: any) => o.opportunity)) {
-                y = section('7. OPPORTUNITIES FOR IMPROVEMENT', y);
-                autoTable(doc, {
-                    startY: y,
-                    head: [['Ref', 'Standard Clause', 'Area / Process', 'Opportunity']],
-                    body: auditData.opportunities.filter((o: any) => o.opportunity).map((o: any) => [o.id, o.standardClause || '—', o.areaProcess || '—', o.opportunity]),
-                    headStyles: { fillColor: amberColor as [number, number, number] },
-                    styles: { fontSize: 8 },
-                    theme: 'grid'
-                });
-                y = (doc as any).lastAutoTable.finalY + 10;
-            }
-
-            if (auditData.positiveAspects?.some((pa: any) => pa.aspect)) {
-                y = section('8. POSITIVE ASPECTS / BEST PRACTICES', y);
-                autoTable(doc, {
-                    startY: y,
-                    head: [['Ref', 'Standard Clause', 'Area / Process', 'Positive Aspect']],
-                    body: auditData.positiveAspects.filter((pa: any) => pa.aspect).map((pa: any) => [pa.id, pa.standardClause || '—', pa.areaProcess || '—', pa.aspect]),
-                    headStyles: { fillColor: greenColor as [number, number, number] },
-                    styles: { fontSize: 8 },
-                    theme: 'grid'
-                });
-                y = (doc as any).lastAutoTable.finalY + 10;
-            }
-
-            // --- Footer / Signatures ---
-            checkPage(30);
-            y += 10;
-            doc.setFontSize(9);
-            doc.text('Auditor Signature:', margin, y);
-            doc.line(margin + 32, y, margin + 80, y);
-            doc.text('Date:', margin + 90, y);
-            doc.line(margin + 100, y, margin + 140, y);
-
-            doc.save(`${fileName}.pdf`);
+    doc.save(`${(plan.auditName || 'Audit').replace(/\s+/g, '_')}_Report.pdf`);
+ 
             toast.success('PDF Downloaded');
         } catch (error) {
             console.error(error);
@@ -361,8 +584,7 @@ const AuditList = () => {
             setLoading(false);
         }
     };
-
-    const handleDownloadDocx = async (planStub: any) => {
+const handleDownloadDocx = async (planStub: any) => {
         setLoading(true);
         try {
             const res = await fetch(`${API_BASE_URL}/api/audit-plans/${planStub.id}`);
