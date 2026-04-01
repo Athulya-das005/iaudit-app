@@ -37,6 +37,7 @@ export default function Auth() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
     const [resendTimer, setResendTimer] = useState(0);
+    const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
 
     const containerRef = useRef<HTMLDivElement>(null);
     const overlayRef = useRef<HTMLDivElement>(null);
@@ -126,13 +127,34 @@ export default function Auth() {
         }
     };
 
-    // Step 1: Send OTP
     const handleSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Comprehensive field-level validation
+        const errors: Record<string, string> = {};
+        if (!signupFirstName.trim()) errors.firstName = "First name is required";
+        if (!signupLastName.trim()) errors.lastName = "Last name is required";
+        if (!signupEmail.trim()) {
+            errors.email = "Email address is required";
+        } else if (!/\S+@\S+\.\S+/.test(signupEmail)) {
+            errors.email = "Please enter a valid email";
+        }
+        if (!signupPhone.trim()) errors.phone = "Phone number is required";
+        if (!signupPassword) {
+            errors.password = "Password is required";
+        } else if (signupPassword.length < 8) {
+            errors.password = "Password must be at least 8 characters";
+        }
+        if (!signupConfirmPassword) {
+            errors.confirmPassword = "Please confirm your password";
+        } else if (signupPassword !== signupConfirmPassword) {
+            errors.confirmPassword = "Passwords do not match";
+        }
 
-        // Basic validation
-        if (signupPassword !== signupConfirmPassword) {
-            setErrorMessage("Passwords do not match");
+        setSignupErrors(errors);
+
+        // Stop if there are any validation errors
+        if (Object.keys(errors).length > 0) {
             return;
         }
 
@@ -268,81 +290,99 @@ export default function Auth() {
                                         <div className="space-y-1.5">
                                             <Label className="text-xs font-semibold text-[#4B5563]">First Name</Label>
                                             <Input
-                                                required
                                                 placeholder="John"
                                                 value={signupFirstName}
-                                                onChange={(e) => setSignupFirstName(e.target.value)}
-                                                className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B]"
+                                                onChange={(e) => {
+                                                    setSignupFirstName(e.target.value);
+                                                    if (signupErrors.firstName) setSignupErrors(prev => ({ ...prev, firstName: "" }));
+                                                }}
+                                                className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B] ${signupErrors.firstName ? "border-red-500 focus:ring-red-500" : ""}`}
                                             />
+                                            {signupErrors.firstName && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.firstName}</p>}
                                         </div>
                                         <div className="space-y-1.5">
                                             <Label className="text-xs font-semibold text-[#4B5563]">Last Name</Label>
                                             <Input
-                                                required
                                                 placeholder="Doe"
                                                 value={signupLastName}
-                                                onChange={(e) => setSignupLastName(e.target.value)}
-                                                className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B]"
+                                                onChange={(e) => {
+                                                    setSignupLastName(e.target.value);
+                                                    if (signupErrors.lastName) setSignupErrors(prev => ({ ...prev, lastName: "" }));
+                                                }}
+                                                className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B] ${signupErrors.lastName ? "border-red-500 focus:ring-red-500" : ""}`}
                                             />
+                                            {signupErrors.lastName && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.lastName}</p>}
                                         </div>
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-[#4B5563]">Email Address</Label>
                                         <Input
-                                            required
                                             type="email"
                                             placeholder="john@example.com"
                                             value={signupEmail}
-                                            onChange={(e) => setSignupEmail(e.target.value)}
-                                            className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B]"
+                                            onChange={(e) => {
+                                                setSignupEmail(e.target.value);
+                                                if (signupErrors.email) setSignupErrors(prev => ({ ...prev, email: "" }));
+                                            }}
+                                            className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B] ${signupErrors.email ? "border-red-500 focus:ring-red-500" : ""}`}
                                         />
+                                        {signupErrors.email && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.email}</p>}
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-[#4B5563]">Phone Number</Label>
                                         <Input
-                                            required
                                             type="tel"
                                             placeholder="+1 234 567 8900"
                                             value={signupPhone}
-                                            onChange={(e) => setSignupPhone(e.target.value)}
-                                            className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B]"
+                                            onChange={(e) => {
+                                                setSignupPhone(e.target.value);
+                                                if (signupErrors.phone) setSignupErrors(prev => ({ ...prev, phone: "" }));
+                                            }}
+                                            className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:ring-1 focus:ring-[#00875B] ${signupErrors.phone ? "border-red-500 focus:ring-red-500" : ""}`}
                                         />
+                                        {signupErrors.phone && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.phone}</p>}
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-[#4B5563]">Password</Label>
                                         <div className="relative">
                                             <Input
-                                                required
                                                 type={showSignupPassword ? "text" : "password"}
                                                 placeholder="8+ characters"
                                                 value={signupPassword}
-                                                onChange={(e) => setSignupPassword(e.target.value)}
-                                                className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] pr-10 focus:ring-1 focus:ring-[#00875B]"
+                                                onChange={(e) => {
+                                                    setSignupPassword(e.target.value);
+                                                    if (signupErrors.password) setSignupErrors(prev => ({ ...prev, password: "" }));
+                                                }}
+                                                className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] pr-10 focus:ring-1 focus:ring-[#00875B] ${signupErrors.password ? "border-red-500 focus:ring-red-500" : ""}`}
                                             />
                                             <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#4B5563]">
                                                 {showSignupPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                             </button>
                                         </div>
+                                        {signupErrors.password && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.password}</p>}
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <Label className="text-xs font-semibold text-[#4B5563]">Confirm Password</Label>
                                         <div className="relative">
                                             <Input
-                                                required
                                                 type={showSignupConfirmPassword ? "text" : "password"}
                                                 placeholder="Confirm password"
                                                 value={signupConfirmPassword}
-                                                onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                                                className="h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] pr-10 focus:ring-1 focus:ring-[#00875B]"
+                                                onChange={(e) => {
+                                                    setSignupConfirmPassword(e.target.value);
+                                                    if (signupErrors.confirmPassword) setSignupErrors(prev => ({ ...prev, confirmPassword: "" }));
+                                                }}
+                                                className={`h-11 bg-[#F9FAFB] border-[#E5E7EB] rounded-lg text-sm text-[#111827] placeholder:text-[#9CA3AF] pr-10 focus:ring-1 focus:ring-[#00875B] ${signupErrors.confirmPassword ? "border-red-500 focus:ring-red-500" : ""}`}
                                             />
                                             <button type="button" onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#4B5563]">
                                                 {showSignupConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                             </button>
                                         </div>
+                                        {signupErrors.confirmPassword && <p className="text-[10px] text-red-500 mt-1 pl-1 font-medium">{signupErrors.confirmPassword}</p>}
                                     </div>
 
                                     <Button disabled={isSubmitting} type="submit" className="w-full h-12 text-base font-bold bg-[#00875B] text-white hover:bg-[#006E4A] rounded-lg shadow-sm transition-all mt-4">
