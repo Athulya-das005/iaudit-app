@@ -140,6 +140,44 @@ export default function SuperAdmin() {
         }
     };
 
+    const handleAddUser = async (userData: any) => {
+        try {
+            const endpoint = modalMode === "create" ? `${API_URL}/users` : `${API_URL}/users/${selectedUser.id}`;
+            const method = modalMode === "create" ? "POST" : "PUT";
+            
+            const response = await fetch(endpoint, {
+                method: method,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(userData),
+            });
+
+            if (response.ok) {
+                const updatedUser = await response.json();
+                if (modalMode === "create") {
+                    setUsers([...users, updatedUser]);
+                    toast.success("User created successfully!");
+                } else {
+                    setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u));
+                    toast.success("User updated successfully!");
+                }
+            } else {
+                const errorData = await response.json();
+                console.error("Server error data:", errorData);
+                const errorMsg = errorData.error || errorData.message || "Operation failed";
+                toast.error(errorMsg);
+                throw new Error(errorMsg); // Throw so UserModal can catch it
+            }
+        } catch (error: any) {
+            console.error("Error processing user:", error);
+            if (error.message && error.message !== "Operation failed") {
+                throw error; // Re-throw specific errors for the modal
+            }
+            const genericMsg = "An error occurred while creating/updating user.";
+            toast.error(genericMsg);
+            throw new Error(genericMsg);
+        }
+    };
+
     const handleDeleteUser = async () => {
         if (!selectedUser) return;
 
@@ -399,10 +437,7 @@ export default function SuperAdmin() {
                     setShowUserModal(false);
                     setSelectedUser(null);
                 }}
-                onSubmit={async (data) => {
-                    // Logic for edit/create can be added if needed, but the requirement was active/inactive
-                    setShowUserModal(false);
-                }}
+                onSubmit={handleAddUser}
                 mode={modalMode}
                 initialData={selectedUser}
             />

@@ -162,11 +162,18 @@ export default function Users() {
             } else {
                 const errorData = await response.json();
                 console.error("Server error data:", errorData);
-                toast.error(errorData.error || errorData.message || "Operation failed");
+                const errorMsg = errorData.error || errorData.message || "Operation failed";
+                toast.error(errorMsg);
+                throw new Error(errorMsg); // Throw so UserModal can catch it
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error processing user:", error);
-            toast.error("An error occurred. Check console for details.");
+            if (error.message && error.message !== "Operation failed") {
+                throw error; // Re-throw specific errors for the modal
+            }
+            const genericMsg = "An error occurred. Check console for details.";
+            toast.error(genericMsg);
+            throw new Error(genericMsg);
         }
     };
 
