@@ -177,8 +177,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                 id="first-name"
                                 placeholder="First Name"
                                 value={firstName}
-                                onChange={(e) => { e.stopPropagation(); setFirstName(e.target.value); }}
-                                autoComplete="off"
+                                onChange={(e) => {
+                                    e.stopPropagation();
+                                    setFirstName(e.target.value);
+                                }}
                                 disabled={isViewMode}
                             />
                         </div>
@@ -188,8 +190,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                 id="last-name"
                                 placeholder="Last Name"
                                 value={lastName}
-                                onChange={(e) => { e.stopPropagation(); setLastName(e.target.value); }}
-                                autoComplete="off"
+                                onChange={(e) => {
+                                    e.stopPropagation();
+                                    setLastName(e.target.value);
+                                }}
                                 disabled={isViewMode}
                             />
                         </div>
@@ -205,8 +209,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                 placeholder="Email address"
                                 className="pl-9"
                                 value={email}
-                                onChange={(e) => { e.stopPropagation(); setEmail(e.target.value); }}
-                                autoComplete="off"
+                                onChange={(e) => {
+                                    e.stopPropagation();
+                                    setEmail(e.target.value);
+                                }}
                                 disabled={isViewMode}
                             />
                         </div>
@@ -222,8 +228,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                     placeholder="Mobile number"
                                     className="pl-9"
                                     value={mobile}
-                                    onChange={(e) => { e.stopPropagation(); setMobile(e.target.value); }}
-                                    autoComplete="off"
+                                    onChange={(e) => {
+                                    e.stopPropagation();
+                                    setMobile(e.target.value);
+                                }}
                                     disabled={isViewMode}
                                 />
                             </div>
@@ -254,8 +262,7 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                     placeholder="Enter custom role name"
                                     className="pl-9"
                                     value={customRoleName}
-                                    onChange={(e) => { e.stopPropagation(); setCustomRoleName(e.target.value); }}
-                                    autoComplete="off"
+                                    onChange={(e) => setCustomRoleName(e.target.value)}
                                     disabled={isViewMode}
                                 />
                             </div>
@@ -289,8 +296,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                         placeholder="Password"
                                         className="pl-9"
                                         value={password}
-                                        onChange={(e) => { e.stopPropagation(); setPassword(e.target.value); }}
-                                        autoComplete="off"
+                                        onChange={(e) => {
+                                        e.stopPropagation();
+                                        setPassword(e.target.value);
+                                    }}
                                     />
                                 </div>
                             </div>
@@ -306,8 +315,10 @@ export default function UserModal({ open, onClose, onSubmit, mode = "create", in
                                         placeholder="Confirm Password"
                                         className="pl-9"
                                         value={confirmPassword}
-                                        onChange={(e) => { e.stopPropagation(); setConfirmPassword(e.target.value); }}
-                                        autoComplete="off"
+                                        onChange={(e) => {
+                                        e.stopPropagation();
+                                        setConfirmPassword(e.target.value);
+                                    }}
                                     />
                                 </div>
                             </div>
