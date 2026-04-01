@@ -659,7 +659,10 @@ app.get('/api/users', async (req, res) => {
                 role: true,
                 customRoleName: true,
                 isActive: true,
-                createdAt: true
+                createdAt: true,
+                companies: {
+                    select: { name: true }
+                }
             }
         });
         res.json(users);
