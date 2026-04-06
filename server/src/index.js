@@ -27,7 +27,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.use(cors({
     origin: ['https://apps.iaudit.global', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:8080'], // Allow production and local development
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires']
 }));
 // --- Stripe Webhook Route (MUST BE BEFORE express.json()) ---
@@ -177,6 +177,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                         status: 'paid',
                         amount: session.amount_total / 100,
                         stripePaymentIntentId: paymentIntentId,
+                        stripeInvoiceId: session.invoice || null,
                         ...(duration && { duration }),
                         ...(billingType && { billingType })
                     }
@@ -184,19 +185,23 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                 console.log('Payment updated for session:', session.id, '| paymentIntent:', paymentIntentId, '| duration:', duration);
 
                 // Calculate sub_renewal_date based on duration and billingType
-                let paymentDoneDate = new Date();
-                let subRenewalDate = new Date(paymentDoneDate);
+                // For monthly: use Stripe's authoritative period_end (already stored in nextBillingDate)
+                // For yearly/contracts: calculate from payment done date + duration
+                let subRenewalDate;
 
                 if (billingType === 'monthly' || billingType === 'MONTHLY') {
-                    subRenewalDate.setMonth(subRenewalDate.getMonth() + 1);
-                } else if (duration === '1year') {
-                    subRenewalDate.setFullYear(subRenewalDate.getFullYear() + 1);
+                    // nextBillingDate comes from Stripe's current_period_end — it handles 28/30/31 day months correctly
+                    subRenewalDate = nextBillingDate || new Date();
                 } else if (duration === '3years') {
+                    subRenewalDate = new Date();
                     subRenewalDate.setFullYear(subRenewalDate.getFullYear() + 3);
                 } else if (duration === '6years') {
+                    subRenewalDate = new Date();
                     subRenewalDate.setFullYear(subRenewalDate.getFullYear() + 6);
                 } else {
-                    subRenewalDate.setMonth(subRenewalDate.getMonth() + 1); // fallback to 1 month
+                    // 1year default for yearly/contract plans
+                    subRenewalDate = new Date();
+                    subRenewalDate.setFullYear(subRenewalDate.getFullYear() + 1);
                 }
 
                 // 2. For monthly subscriptions, update Subscription table
@@ -251,8 +256,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                             subscriptionPlan: session.metadata.planId,
                             stripeSubscriptionId: subscriptionId,
                             planStartDate: planStartDate,
-                            ...(planExpiryDate && { planExpiryDate }),
-                            ...(nextBillingDate && { nextBillingDate })
+                            // Always write nextBillingDate from Stripe's period_end — never leave stale
+                            nextBillingDate: periodEnd,
+                            ...(planExpiryDate && { planExpiryDate })
                         }
                     });
                 }
@@ -363,8 +369,10 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 
                 console.log("=== START invoice DEBUG ===");
                 try {
-                    // Fetch subscription to get updated period end for renewal
+                    // Fetch subscription to get updated period end for renewal — Stripe is the source of truth
                     const renewedSub = await stripe.subscriptions.retrieve(invoice.subscription);
+
+                    // Use Stripe's current_period_end directly — it handles all edge cases (28/30/31 day months, leap years)
                     const renewEnd = renewedSub.current_period_end
                         ? new Date(renewedSub.current_period_end * 1000)
                         : undefined;
@@ -372,23 +380,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                         ? new Date(renewedSub.current_period_start * 1000)
                         : undefined;
 
-                    // Calculate next renewal date
-                    const paymentDoneDate = new Date();
-                    const nextRenewalDate = new Date(paymentDoneDate);
-                    const billingType = renewedSub.metadata?.billingType || 'monthly';
-                    const duration = renewedSub.metadata?.duration || '1year';
-
-                    if (billingType === 'monthly' || billingType === 'MONTHLY') {
-                        nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1);
-                    } else if (duration === '1year') {
-                        nextRenewalDate.setFullYear(nextRenewalDate.getFullYear() + 1);
-                    } else if (duration === '3years') {
-                        nextRenewalDate.setFullYear(nextRenewalDate.getFullYear() + 3);
-                    } else if (duration === '6years') {
-                        nextRenewalDate.setFullYear(nextRenewalDate.getFullYear() + 6);
-                    } else {
-                        nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1);
-                    }
+                    // sub_renewal_date = Stripe's current_period_end (next billing date) — single source, no manual math
+                    const subRenewalDateFromStripe = renewEnd || new Date();
 
                     await prisma.subscription.update({
                         where: { stripeSubscriptionId: invoice.subscription },
@@ -396,12 +389,13 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                             status: 'active',
                             ...(renewStart && { currentPeriodStart: renewStart }),
                             ...(renewEnd && { currentPeriodEnd: renewEnd }),
-                            sub_renewal_date: nextRenewalDate
+                            sub_renewal_date: subRenewalDateFromStripe
                         }
                     });
 
                     console.log("Invoice ID:", invoice.id);
                     console.log("Subscription:", invoice.subscription);
+                    console.log("Stripe period_end (new nextBillingDate):", renewEnd);
 
                     const user = await prisma.user.findFirst({
                         where: { stripeSubscriptionId: invoice.subscription }
@@ -411,32 +405,17 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                         console.error(`User not found for subscription: ${invoice.subscription}`);
                     } else {
                         console.log("User found:", user.id);
-                        console.log("Old nextBillingDate:", user.nextBillingDate);
-                        
-                        const isMonthly = renewedSub.metadata?.billingType === 'monthly' || renewedSub.metadata?.billingType === 'MONTHLY' || !renewedSub.metadata?.billingType;
-                        
-                        if (isMonthly) {
-                            if (user.nextBillingDate) {
-                                const currentDate = new Date(user.nextBillingDate);
-                                const newNextBillingDate = new Date(currentDate);
-                                newNextBillingDate.setMonth(newNextBillingDate.getMonth() + 1);
-                                
-                                console.log("New nextBillingDate:", newNextBillingDate);
 
-                                await prisma.user.update({
-                                    where: { id: user.id },
-                                    data: { nextBillingDate: newNextBillingDate }
-                                });
-                                
-                                const updatedUser = await prisma.user.findUnique({
-                                    where: { id: user.id }
-                                });
-                                console.log("UPDATED DATE FROM DB:", updatedUser.nextBillingDate);
-                            } else {
-                                console.error("User has no nextBillingDate set in DB.");
-                            }
+                        // Always use Stripe's period end — never manually add months from existing DB date
+                        // This prevents double-adding on first payment and handles month-length edge cases
+                        if (renewEnd) {
+                            await prisma.user.update({
+                                where: { id: user.id },
+                                data: { nextBillingDate: renewEnd }
+                            });
+                            console.log("nextBillingDate set from Stripe (authoritative):", renewEnd);
                         } else {
-                            console.log(`Skipping nextBillingDate increment, billingType: ${renewedSub.metadata?.billingType}`);
+                            console.error("Stripe returned no current_period_end — skipping nextBillingDate update");
                         }
                     }
                     console.log("=== END invoice DEBUG ===");
@@ -1236,16 +1215,29 @@ app.get('/api/users/:id/status', async (req, res) => {
                 planStartDate: true,
                 planExpiryDate: true,
                 nextBillingDate: true,
+                stripeSubscriptionId: true,
                 stripePriceId: true,
                 email: true,
                 firstName: true,
-                lastName: true
+                lastName: true,
+                renewalType: true,
+                autopayConsent: true
             }
         });
 
         if (!user) {
             return res.json({ exists: false, isActive: false });
         }
+
+        // Fetch duration from the latest successful payment
+        const latestPayment = await prisma.payment.findFirst({
+            where: { userId: user.id, status: 'paid' },
+            orderBy: { createdAt: 'desc' },
+            select: { duration: true }
+        });
+
+        // --- Authoritative next billing date: Return from User model directly as requested ---
+        console.log("DB nextBillingDate:", user.nextBillingDate);
 
         // Logic to determine if expired for frontend use
         let currentStatus = user.subscriptionStatus;
@@ -1262,11 +1254,13 @@ app.get('/api/users/:id/status', async (req, res) => {
             subscriptionPlan: user.subscriptionPlan,
             planStartDate: user.planStartDate,
             planExpiryDate: user.planExpiryDate,
-            nextBillingDate: user.nextBillingDate,
+            nextBillingDate: user.nextBillingDate, // Read directly from User table
             stripePriceId: user.stripePriceId,
             email: user.email,
             firstName: user.firstName,
-            lastName: user.lastName
+            lastName: user.lastName,
+            renewalType: user.renewalType,
+            duration: latestPayment?.duration || null
         });
     } catch (error) {
         console.error('Failed to fetch user status:', error);
@@ -1943,7 +1937,7 @@ app.post('/api/feedback', async (req, res) => {
 
     try {
         const mailOptions = {
-            from: 'subs.safetynett@gmail.com',
+            from: process.env.SMTP_USER || 'noreply@iaudit.global',
             to: 'Mathew@iaudit.global',
             cc: 'jasmin@iaudit.global',
             subject: `[Feedback] From ${name}`,
@@ -2002,16 +1996,18 @@ app.get('/api/stripe/session/:sessionId', async (req, res) => {
     try {
         const session = await stripe.checkout.sessions.retrieve(sessionId);
         let plan = session.metadata?.planId || 'unknown';
+        let billingType = session.metadata?.billingType || 'ONCE';
         let status = 'unknown';
         let currentPeriodEnd = null;
         let amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : '0.00';
         let currency = session.currency ? session.currency.toUpperCase() : 'GBP';
+        let subscriptionId = session.subscription;
 
-        if (session.subscription) {
-            const sub = await stripe.subscriptions.retrieve(session.subscription);
+        if (subscriptionId) {
+            const sub = await stripe.subscriptions.retrieve(subscriptionId);
             status = sub.status;
             currentPeriodEnd = sub.current_period_end
-                ? new Date(sub.current_period_end * 1000).toISOString().split('T')[0]
+                ? new Date(sub.current_period_end * 1000).toISOString()
                 : null;
         } else if (session.payment_status === 'paid') {
             status = 'active';
@@ -2019,6 +2015,8 @@ app.get('/api/stripe/session/:sessionId', async (req, res) => {
 
         res.json({
             plan: plan.toUpperCase(),
+            isMonthly: billingType.toUpperCase() === 'MONTHLY',
+            subscriptionId,
             status,
             currentPeriodEnd,
             amount,
@@ -2088,10 +2086,15 @@ app.post('/api/payments/create-checkout-session', async (req, res) => {
             mode: isSubscription ? 'subscription' : 'payment',
             locale: 'auto',
             adaptive_pricing: { enabled: false }, // Disable currency toggle (INR/GBP switch)
-            success_url: `${process.env.FRONTEND_URL || 'http://localhost:8080'}/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `${process.env.FRONTEND_URL || 'http://localhost:8080'}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:8080'}/subscription?canceled=true`,
             metadata: { userId: user.id.toString(), planId, billingType, duration: duration || '1year' },
         };
+
+        // For one-time payments, enable invoice creation
+        if (!isSubscription) {
+            sessionParams.invoice_creation = { enabled: true };
+        }
 
         // For subscriptions, lock currency via the currency param
         if (isSubscription) {
@@ -2152,25 +2155,280 @@ app.get('/api/subscription/invoices/:userId', async (req, res) => {
             return res.json([]); // Return empty if no customer exists yet
         }
 
+        // 1. Fetch current Stripe invoices with deep expansion for receipts
         const invoices = await stripe.invoices.list({
             customer: user.stripeCustomerId,
-            limit: 10
+            limit: 20,
+            expand: ['data.charge', 'data.payment_intent.latest_charge']
         });
 
-        const invoiceData = invoices.data.map(inv => ({
-            id: inv.id,
-            date: new Date(inv.created * 1000).toISOString(),
-            amount: (inv.amount_paid / 100).toFixed(2),
-            currency: inv.currency.toUpperCase(),
-            status: inv.status,
-            invoice_url: inv.invoice_pdf,
-            number: inv.number
+        // 2. Fetch local payment records to fill gaps (especially for one-time payments without invoices)
+        const localPayments = await prisma.payment.findMany({
+            where: { userId: parseInt(userId), status: 'paid' },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Map Stripe invoices first
+        const stripeInvoiceData = invoices.data.map(inv => {
+            // Robust extraction: Check both expanded objects and potential path variations
+            let receipt_url = null;
+            
+            if (inv.charge && typeof inv.charge === 'object') {
+                receipt_url = inv.charge.receipt_url;
+            } 
+            
+            if (!receipt_url && inv.payment_intent && typeof inv.payment_intent === 'object') {
+                receipt_url = inv.payment_intent.latest_charge?.receipt_url || 
+                              inv.payment_intent.charges?.data?.[0]?.receipt_url;
+            }
+
+            // Fallback for metadata/legacy if still not found but it's a Stripe invoice
+            if (!receipt_url) {
+                receipt_url = inv.hosted_invoice_url; // Last resort if specific receipt is missing
+            }
+            
+            console.log(`[Stripe Invoice Debug] ID: ${inv.id} | Charge Obj: ${typeof inv.charge} | PI Obj: ${typeof inv.payment_intent} | Final Receipt: ${receipt_url ? 'FOUND' : 'MISSING'}`);
+
+            return {
+                id: inv.id,
+                date: inv.status_transitions?.paid_at 
+                    ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
+                    : new Date(inv.created * 1000).toISOString(),
+                amount: (inv.amount_paid / 100).toFixed(2),
+                currency: inv.currency.toUpperCase(),
+                status: inv.status === 'paid' ? 'PAID' : inv.status.toUpperCase(),
+                invoice_pdf: inv.invoice_pdf || null,
+                hosted_invoice_url: inv.hosted_invoice_url || null,
+                receipt_url: receipt_url,
+                number: inv.number,
+                source: 'stripe'
+            };
+        });
+
+        // Identify local payments that don't have a corresponding Stripe invoice in our list
+        const missingPayments = localPayments.filter(payment => 
+            !stripeInvoiceData.some(inv => inv.id === payment.stripeInvoiceId)
+        );
+
+        // Map local payments as fallback entries
+        const fallbackPaymentData = await Promise.all(missingPayments.map(async (payment) => {
+            let receiptUrl = null;
+            if (payment.stripePaymentIntentId) {
+                try {
+                    const pi = await stripe.paymentIntents.retrieve(payment.stripePaymentIntentId, {
+                        expand: ['latest_charge', 'charges.data']
+                    });
+                    receiptUrl = pi.latest_charge?.receipt_url || pi.charges?.data?.[0]?.receipt_url || null;
+                } catch (e) {
+                    console.error('Error fetching PI for receipt:', e.message);
+                }
+            }
+
+            console.log(`[Local Payment Debug] ID: ${payment.id} | PI: ${payment.stripePaymentIntentId} | Final Receipt: ${receiptUrl ? 'FOUND' : 'MISSING'}`);
+
+            return {
+                id: payment.stripePaymentIntentId || `local_${payment.id}`,
+                date: payment.createdAt.toISOString(),
+                amount: payment.amount.toFixed(2),
+                currency: payment.currency.toUpperCase(),
+                status: 'PAID',
+                invoice_pdf: null,
+                hosted_invoice_url: null,
+                receipt_url: receiptUrl,
+                number: payment.billingType?.toUpperCase() === 'MONTHLY' ? 'Subscription' : 'One-time Payment',
+                source: 'local'
+            };
         }));
 
-        res.json(invoiceData);
+        // Combine and sort by date descending
+        const combinedData = [...stripeInvoiceData, ...fallbackPaymentData].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+
+        res.json(combinedData);
     } catch (error) {
         console.error('Invoices Fetch Error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Update Renewal Preference ---
+app.patch('/api/users/:userId/subscription-preference', async (req, res) => {
+    const { userId } = req.params;
+    const { renewalType, autopayConsent, subscriptionId } = req.body;
+
+    console.log(`[PREFERENCE] Received update request for user: ${userId}, preference: ${renewalType}, consent: ${autopayConsent}`);
+
+    try {
+        if (!renewalType) {
+            return res.status(400).json({ error: 'Missing renewalType' });
+        }
+
+        const targetUserId = parseInt(userId);
+        if (isNaN(targetUserId)) {
+             return res.status(400).json({ error: 'Invalid User ID' });
+        }
+
+        const user = await prisma.user.update({
+            where: { id: targetUserId },
+            data: {
+                renewalType: renewalType.toUpperCase(),
+                autopayConsent: autopayConsent === true
+            }
+        });
+
+        // Sync with Stripe if subscription exists
+        if (subscriptionId) {
+             try {
+                const updateParams = {};
+                if (renewalType === 'MANUAL') {
+                    updateParams.collection_method = 'send_invoice';
+                    updateParams.days_until_due = 15; 
+                } else {
+                    updateParams.collection_method = 'charge_automatically';
+                }
+                await stripe.subscriptions.update(subscriptionId, updateParams);
+                console.log(`[PREFERENCE] Stripe subscription ${subscriptionId} synchronized`);
+             } catch (stripeError) {
+                console.error('[PREFERENCE] Stripe Sync Error:', stripeError.message);
+                // We still returned success because DB is updated
+             }
+        }
+
+        res.json({ success: true, user });
+    } catch (error) {
+        console.error('Preference Update Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Subscription Cancellation Request ---
+app.post('/api/subscription/cancel-request', async (req, res) => {
+    const { userId, reason, description } = req.body;
+
+    console.log('Cancellation Request Received:', { userId, reason });
+
+    if (!userId || !reason) {
+        return res.status(400).json({ error: 'User ID and Reason are required' });
+    }
+
+    const parsedId = parseInt(userId);
+    if (isNaN(parsedId)) {
+        console.error('Invalid User ID received:', userId);
+        return res.status(400).json({ error: 'Invalid User ID format' });
+    }
+
+    try {
+        const user = await prisma.user.findUnique({ where: { id: parsedId } });
+        if (!user) {
+            console.error('User not found for cancellation request:', parsedId);
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const mailOptions = {
+            from: process.env.SMTP_USER || 'noreply@iaudit.global',
+            to: 'iven@iaudit.global',
+            subject: `[Cancellation Request] ${user.firstName} ${user.lastName}`,
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                    <div style="background-color: #dc2626; padding: 32px 24px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">CANCELLATION REQUEST</h1>
+                    </div>
+                    <div style="padding: 32px 24px;">
+                        <p style="margin: 0 0 24px; color: #4b5563; font-size: 16px; line-height: 1.5;">A user has submitted a request to cancel their premium subscription.</p>
+                        
+                        <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
+                             <div style="margin-bottom: 16px;">
+                                <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                            </div>
+                            <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Plan Details</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.subscriptionPlan ? user.subscriptionPlan.toUpperCase() : 'N/A'}</p>
+                            </div>
+                            <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Primary Reason</p>
+                                <p style="margin: 0; font-weight: 700; color: #dc2626; font-size: 15px;">${reason}</p>
+                            </div>
+                            <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Detailed Feedback</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Cancellation request successfully sent for ${user.email}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Cancellation Request Error:', error);
+        res.status(500).json({ error: error.message || 'Server error while sending request' });
+    }
+});
+
+// --- Subscription Upgrade Request ---
+app.post('/api/subscription/upgrade-request', async (req, res) => {
+    const { userId, targetPlan, description } = req.body;
+
+    console.log('Upgrade Request Received:', { userId, targetPlan });
+
+    if (!userId || !targetPlan) {
+        return res.status(400).json({ error: 'User ID and Target Plan are required' });
+    }
+
+    const parsedId = parseInt(userId);
+    if (isNaN(parsedId)) {
+        console.error('Invalid User ID received:', userId);
+        return res.status(400).json({ error: 'Invalid User ID format' });
+    }
+
+    try {
+        const user = await prisma.user.findUnique({ where: { id: parsedId } });
+        if (!user) {
+            console.error('User not found for upgrade request:', parsedId);
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const mailOptions = {
+            from: process.env.SMTP_USER || 'noreply@iaudit.global',
+            to: 'iven@iaudit.global',
+            subject: `[Upgrade Request] ${user.firstName} ${user.lastName}`,
+            html: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                    <div style="background-color: #1e855e; padding: 32px 24px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">UPGRADE REQUEST</h1>
+                    </div>
+                    <div style="padding: 32px 24px;">
+                        <p style="margin: 0 0 24px; color: #4b5563; font-size: 16px; line-height: 1.5;">A user has submitted a request to upgrade their plan.</p>
+                        
+                        <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
+                             <div style="margin-bottom: 16px;">
+                                <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                            </div>
+                            <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Target Plan</p>
+                                <p style="margin: 0; font-weight: 700; color: #1e855e; font-size: 17px;">${targetPlan}</p>
+                            </div>
+                            <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                                <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Additional Comments</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`Upgrade request successfully sent for ${user.email}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Upgrade Request Error:', error);
+        res.status(500).json({ error: error.message || 'Server error while sending request' });
     }
 });
 

@@ -113,13 +113,11 @@ export default function Subscription() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
 
-  // Success/canceled state from URL params
-  const isSuccess = searchParams.get("success") === "true";
+  // Canceled state from URL params
   const isCanceled = searchParams.get("canceled") === "true";
   const sessionId = searchParams.get("session_id");
 
   // Session verification state
-  const [subDetails, setSubDetails] = useState<SubscriptionDetails | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
   // User's active plan from localStorage
@@ -128,28 +126,7 @@ export default function Subscription() {
   const activePlan = user?.subscriptionPlan?.toUpperCase() || null;
   const isActive = user?.subscriptionStatus === "active";
 
-  // Verify session on success
-  useEffect(() => {
-    if (isSuccess && sessionId) {
-      setIsVerifying(true);
-      fetch(`${API_BASE_URL}/api/stripe/session/${sessionId}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setSubDetails(data);
-          // Update localStorage with new subscription status
-          if (user && data.status === "active") {
-            const updatedUser = {
-              ...user,
-              subscriptionStatus: "active",
-              subscriptionPlan: data.plan,
-            };
-            localStorage.setItem("user", JSON.stringify(updatedUser));
-          }
-        })
-        .catch((err) => console.error("Session verification failed:", err))
-        .finally(() => setIsVerifying(false));
-    }
-  }, [isSuccess, sessionId]);
+  // Success handling removed: Success is now handled by the /subscription/success route
 
   useEffect(() => {
     if (isCanceled) {
@@ -284,61 +261,7 @@ export default function Subscription() {
           </div>
         )}
 
-        {/* Success Banner */}
-        {isSuccess && (
-          <div className="w-full max-w-2xl mb-10 animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="bg-white rounded-2xl shadow-lg border border-green-200 p-8 text-center">
-              <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-10 h-10 text-green-500" />
-              </div>
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                Payment Successful ✅
-              </h2>
-
-              {isVerifying ? (
-                <div className="flex items-center justify-center gap-2 text-slate-500 mt-4">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Verifying your subscription...</span>
-                </div>
-              ) : subDetails ? (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center justify-center gap-6 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-green-600" />
-                      <span className="text-slate-600">Plan:</span>
-                      <span className="font-bold text-slate-900">{subDetails.plan}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
-                      <span className="text-slate-600">Status:</span>
-                      <span className="font-bold text-green-600 capitalize">{subDetails.status}</span>
-                    </div>
-                    {subDetails.currentPeriodEnd && (
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-blue-600" />
-                        <span className="text-slate-600">Next Billing:</span>
-                        <span className="font-bold text-slate-900">
-                          {new Date(subDetails.currentPeriodEnd).toLocaleDateString("en-GB", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-500 mt-2">
-                    Your premium features are now active. Enjoy iAudit!
-                  </p>
-                </div>
-              ) : (
-                <p className="text-slate-500 mt-2">
-                  Thank you for subscribing to iAudit.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Success Banner removed, handled by /subscription/success */}
 
         {/* Currency Toggle */}
         <div className="flex bg-white rounded-full p-1 border border-slate-200 shadow-sm mb-8">

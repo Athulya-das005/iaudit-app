@@ -99,6 +99,10 @@ model User {
   stripePriceId      String?
   stripeInvoiceId    String?
   stripePaymentIntentId String?
+  
+  // Renewal preferences
+  renewalType       String?    // 'AUTOPAY' or 'MANUAL'
+  autopayConsent    Boolean?   @default(false)
 
   leadAuditPlans    AuditPlan[]    @relation("PlanLeadAuditor")
   createdPlans      AuditPlan[]    @relation("UserAuditPlans")
