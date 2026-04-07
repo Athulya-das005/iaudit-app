@@ -311,6 +311,10 @@ const SelfAssessment = () => {
     const [email, setEmail] = useState("");
     const [marketingConsent, setMarketingConsent] = useState(false);
 
+    const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const isFreeUser = user.subscriptionStatus !== 'active';
+
     // Load saved assessments on mount
     React.useEffect(() => {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -1455,7 +1459,13 @@ const SelfAssessment = () => {
                     </div>
                     {/* Header Actions - New Assessment Button */}
                     {step === "list" && (
-                        <Button onClick={() => setStep("setup")} size="sm" className="gap-1.5 shadow-sm bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl px-5 h-11">
+                        <Button onClick={() => {
+                            if (isFreeUser && savedAssessments.length >= 3) {
+                                setIsLimitModalOpen(true);
+                            } else {
+                                setStep("setup");
+                            }
+                        }} size="sm" className="gap-1.5 shadow-sm bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl px-5 h-11">
                             <Plus className="h-4 w-4" /> New Assessment
                         </Button>
                     )}
@@ -2321,6 +2331,41 @@ const SelfAssessment = () => {
                     title="Delete Question"
                     description="Are you sure you want to delete this question? This action cannot be undone."
                 />
+
+                {/* Trial Limit Modal */}
+                <Dialog open={isLimitModalOpen} onOpenChange={setIsLimitModalOpen}>
+                    <DialogContent className="sm:max-w-md w-[95vw] rounded-3xl p-0 overflow-hidden border-0">
+                        <div className="bg-amber-100/50 p-6 sm:p-8 flex items-center justify-center relative">
+                            <div className="bg-amber-100 p-4 rounded-full">
+                                <AlertCircle className="w-12 h-12 text-amber-600" />
+                            </div>
+                        </div>
+                        <div className="p-6 sm:p-8 text-center space-y-4">
+                            <DialogTitle className="text-xl sm:text-2xl font-black text-slate-800">Trial Limit Reached</DialogTitle>
+                            <DialogDescription className="text-sm sm:text-base text-slate-500 font-medium">
+                                You have reached the maximum limit of 3 Self Assessments for trial users. You can still view your saved assessments.
+                            </DialogDescription>
+                            <p className="text-sm font-semibold text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                Upgrade to a premium plan to unlock unlimited assessments and premium features.
+                            </p>
+                        </div>
+                        <DialogFooter className="p-4 sm:p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3">
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setIsLimitModalOpen(false)}
+                                className="w-full sm:w-auto h-12 rounded-xl text-slate-600 font-bold border-slate-200 sm:flex-1"
+                            >
+                                Maybe Later
+                            </Button>
+                            <Button 
+                                onClick={() => window.location.href = '/subscription'}
+                                className="w-full sm:w-auto h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold border-0 shadow-lg shadow-orange-500/20 sm:flex-1 gap-2"
+                            >
+                                Subscribe Now <ArrowRight className="w-4 h-4" />
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
             </div>
         </div>

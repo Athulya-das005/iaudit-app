@@ -65,6 +65,7 @@ interface UserStatus {
   lastName: string;
   renewalType?: string;
   duration?: string;
+  stripeSubscriptionId?: string | null;
 }
 
 export default function SubscriptionDetails() {
@@ -262,6 +263,9 @@ export default function SubscriptionDetails() {
 
   const isMonthly = status?.stripePriceId?.includes('monthly') || status?.nextBillingDate != null;
 
+  // Strict fallback logic: If a recurring subscription ID exists, it's AUTOPAY. Yearly acts as MANUAL.
+  const actualRenewalType = status?.stripeSubscriptionId ? 'AUTOPAY' : (status?.renewalType || 'MANUAL');
+
   // Calculate days remaining for banner (STRICT LOGIC)
   const today = new Date();
   let targetDate = null;
@@ -309,7 +313,7 @@ export default function SubscriptionDetails() {
               {isExpired ? "Your plan has expired!" : `Your plan expires in ${daysRemaining === 0 ? 'today' : daysRemaining + ' days'}`}
             </span>
           </div>
-          {status?.renewalType === 'MANUAL' && (
+          {actualRenewalType === 'MANUAL' && (
              <Button 
               size="sm" 
               variant="secondary"
@@ -341,24 +345,24 @@ export default function SubscriptionDetails() {
               <div className="flex flex-col">
                 <div className={cn(
                   "pt-12 pb-8 flex flex-col items-center text-center",
-                  (isExpired || (status?.renewalType === 'MANUAL' && isMonthly)) ? "bg-red-50" : 
+                  (isExpired || (actualRenewalType === 'MANUAL' && isMonthly)) ? "bg-red-50" : 
                   (daysRemaining <= 7 ? "bg-amber-50" : "bg-blue-50")
                 )}>
                    <div className={cn(
                      "w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-xl rotate-3",
-                     (isExpired || (status?.renewalType === 'MANUAL' && isMonthly)) ? "bg-red-500 text-white" : 
+                     (isExpired || (actualRenewalType === 'MANUAL' && isMonthly)) ? "bg-red-500 text-white" : 
                      (daysRemaining <= 7 ? "bg-amber-500 text-white" : "bg-blue-600 text-white")
                    )}>
                      {isExpired ? <Ban className="w-10 h-10" /> : 
-                      (status?.renewalType === 'MANUAL' ? <Zap className="w-10 h-10" /> : <Info className="w-10 h-10" />)}
+                      (actualRenewalType === 'MANUAL' ? <Zap className="w-10 h-10" /> : <Info className="w-10 h-10" />)}
                    </div>
                    <h2 className="text-2xl font-black text-slate-900 px-8">
                      {isExpired ? "Account Expired" : 
-                      (status?.renewalType === 'MANUAL' ? (isMonthly ? "Payment Required" : "Plan Expiry Reminder") : "Upcoming Renewal")}
+                      (actualRenewalType === 'MANUAL' ? (isMonthly ? "Payment Required" : "Plan Expiry Reminder") : "Upcoming Renewal")}
                    </h2>
                    <p className={cn(
                      "mt-2 text-xs font-black uppercase tracking-widest",
-                     (isExpired || (status?.renewalType === 'MANUAL' && isMonthly)) ? "text-red-600" : 
+                     (isExpired || (actualRenewalType === 'MANUAL' && isMonthly)) ? "text-red-600" : 
                      (daysRemaining <= 7 ? "text-amber-600" : "text-blue-600")
                    )}>
                      {status?.subscriptionPlan?.toUpperCase() || 'PREMIUM'} Plan
@@ -368,7 +372,7 @@ export default function SubscriptionDetails() {
                 <div className="p-8 space-y-6">
                   <div className="bg-slate-50 border border-slate-100 p-6 rounded-3xl">
                      <div className="text-slate-500 text-sm font-medium leading-relaxed mb-4">
-                       {status?.renewalType === 'AUTOPAY' ? (
+                       {actualRenewalType === 'AUTOPAY' ? (
                          <>Your plan will renew on <span className="font-bold text-slate-900">{nextBillingDate ? formatDate(nextBillingDate) : formatDate(planExpiryDate)}</span>. Amount will be automatically debited.</>
                        ) : (
                          <>Your subscription {isExpired ? 'expired on' : 'will expire on'} <span className="font-bold text-slate-900">{nextBillingDate ? formatDate(nextBillingDate) : formatDate(planExpiryDate)}</span>.</>
@@ -388,7 +392,7 @@ export default function SubscriptionDetails() {
                   </div>
 
                   <div className="flex flex-col gap-3 pt-2">
-                    {status?.renewalType === 'MANUAL' ? (
+                    {actualRenewalType === 'MANUAL' ? (
                       <Button 
                         onClick={() => navigate('/subscription')}
                         className={cn(
@@ -414,7 +418,7 @@ export default function SubscriptionDetails() {
                       onClick={() => navigate('/subscription')}
                       className="w-full text-slate-400 font-bold hover:text-slate-600 hover:bg-slate-50 py-4"
                     >
-                      {status?.renewalType === 'AUTOPAY' ? 'Upgrade Plan' : (isExpired ? 'Close' : 'Maybe Later')}
+                      {actualRenewalType === 'AUTOPAY' ? 'Upgrade Plan' : (isExpired ? 'Close' : 'Maybe Later')}
                     </Button>
                   </div>
                 </div>
@@ -468,18 +472,17 @@ export default function SubscriptionDetails() {
                   <p className="text-sm text-slate-500 mt-1">
                     {status?.duration ? `${status.duration.replace('years', ' Years').replace('year', ' Year')} Plan` : "Flexible Subscription"}
                   </p>
-                  {status?.renewalType && (
-                    <div className={cn(
-                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase mt-2 shadow-sm border",
-                      status.renewalType === 'AUTOPAY' ? "bg-[#f0fdf4] text-[#1e855e] border-[#1e855e]/10" : "bg-amber-50 text-amber-700 border-amber-200/30"
-                    )}>
-                      {status.renewalType === 'AUTOPAY' ? (
-                        <><CreditCard className="w-3 h-3" /> Auto-Debit</>
-                      ) : (
-                        <><FileText className="w-3 h-3" /> Manual Pay</>
-                      )}
-                    </div>
-                  )}
+                  
+                  <div className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase mt-2 shadow-sm border",
+                    actualRenewalType === 'AUTOPAY' ? "bg-[#f0fdf4] text-[#1e855e] border-[#1e855e]/10" : "bg-amber-50 text-amber-700 border-amber-200/30"
+                  )}>
+                    {actualRenewalType === 'AUTOPAY' ? (
+                      <><CreditCard className="w-3 h-3" /> Auto-Debit</>
+                    ) : (
+                      <><FileText className="w-3 h-3" /> Manual Pay</>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -581,7 +584,7 @@ export default function SubscriptionDetails() {
                   {daysRemaining! === 0 && `Your plan expires today`}
                   {daysRemaining! < 0 && `Your plan has expired. Please renew to continue.`}
                 </p>
-                {status?.renewalType === 'AUTOPAY' && (
+                  {actualRenewalType === 'AUTOPAY' && (
                   <p className="text-[10px] uppercase font-black tracking-widest mt-0.5 opacity-60">
                     Auto-renewal is active. You will be billed automatically.
                   </p>
@@ -590,7 +593,7 @@ export default function SubscriptionDetails() {
             </div>
             
             <div className="flex items-center gap-3 w-full sm:w-auto">
-              {status?.renewalType === 'MANUAL' ? (
+              {actualRenewalType === 'MANUAL' ? (
                 <Button 
                   onClick={() => navigate("/subscription")}
                   className={cn(

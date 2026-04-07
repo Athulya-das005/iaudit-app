@@ -258,6 +258,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                             planStartDate: planStartDate,
                             // Always write nextBillingDate from Stripe's period_end — never leave stale
                             nextBillingDate: periodEnd,
+                            renewalType: 'AUTOPAY', // Unconditionally default monthly plans to AUTOPAY
+                            autopayConsent: true,   // Unconditionally set consent to true
                             ...(planExpiryDate && { planExpiryDate })
                         }
                     });
@@ -303,6 +305,112 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                     });
                     console.log('User subscription activated for userId:', userId);
                 }
+
+                // 4. Send subscription confirmation email to the user
+                try {
+                    const subscribedUser = await prisma.user.findUnique({ where: { id: userId } });
+                    if (subscribedUser && subscribedUser.email) {
+                        const planName = (session.metadata.planId || 'Premium').toUpperCase();
+                        const paymentAmount = session.amount_total ? `${session.currency?.toUpperCase() === 'GBP' ? '£' : '$'}${(session.amount_total / 100).toFixed(2)}` : 'N/A';
+                        const paymentDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+                        const billingLabel = isMonthly ? 'Monthly Subscription' : `Contract Billing (${duration || '1 Year'})`;
+                        const nextDateLabel = isMonthly ? 'Next Billing Date' : 'Plan Expiry Date';
+                        const nextDateValue = isMonthly
+                            ? (nextBillingDate ? nextBillingDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A')
+                            : (planExpiryDate ? planExpiryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A');
+                        const startDateValue = planStartDate ? planStartDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : paymentDate;
+
+                        const confirmationMail = {
+                            from: process.env.SMTP_USER || 'noreply@iaudit.global',
+                            to: subscribedUser.email,
+                            subject: `Thank you for subscribing to iAudit ${planName}!`,
+                            html: `
+                                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                                    
+                                    <!-- Header -->
+                                    <div style="background: linear-gradient(135deg, #1e855e 0%, #213847 100%); padding: 40px 32px; text-align: center;">
+                                        <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 28px; font-weight: 800; letter-spacing: -0.025em;">Thank You for Subscribing!</h1>
+                                        <p style="color: rgba(255,255,255,0.8); margin: 0; font-size: 15px; font-weight: 400;">Your iAudit ${planName} plan is now active.</p>
+                                    </div>
+
+                                    <!-- Greeting -->
+                                    <div style="padding: 32px 32px 0;">
+                                        <p style="margin: 0 0 20px; color: #374151; font-size: 16px; line-height: 1.6;">
+                                            Dear <strong>${subscribedUser.firstName} ${subscribedUser.lastName}</strong>,
+                                        </p>
+                                        <p style="margin: 0 0 28px; color: #4b5563; font-size: 15px; line-height: 1.7;">
+                                            We're delighted to confirm your subscription to iAudit. Below are your subscription details for your records. You can manage your subscription anytime from the <strong>Subscription</strong> page in your dashboard.
+                                        </p>
+                                    </div>
+
+                                    <!-- Subscription Details Card -->
+                                    <div style="padding: 0 32px 32px;">
+                                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                                            
+                                            <!-- Card Header -->
+                                            <div style="background-color: #213847; padding: 16px 24px;">
+                                                <h3 style="margin: 0; color: #ffffff; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Subscription Details</h3>
+                                            </div>
+
+                                            <!-- Details Table -->
+                                            <table style="width: 100%; border-collapse: collapse;">
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; width: 45%;">Plan Name</td>
+                                                    <td style="padding: 14px 24px; color: #111827; font-size: 15px; font-weight: 700;">${planName}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Billing Type</td>
+                                                    <td style="padding: 14px 24px; color: #111827; font-size: 15px; font-weight: 700;">${billingLabel}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Payment Amount</td>
+                                                    <td style="padding: 14px 24px; color: #1e855e; font-size: 18px; font-weight: 800;">${paymentAmount}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Date of Payment</td>
+                                                    <td style="padding: 14px 24px; color: #111827; font-size: 15px; font-weight: 700;">${paymentDate}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Plan Start Date</td>
+                                                    <td style="padding: 14px 24px; color: #111827; font-size: 15px; font-weight: 700;">${startDateValue}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 14px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">${nextDateLabel}</td>
+                                                    <td style="padding: 14px 24px; color: #111827; font-size: 15px; font-weight: 700;">${nextDateValue}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Help Section -->
+                                    <div style="padding: 0 32px 32px;">
+                                        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px 24px; border-radius: 10px;">
+                                            <p style="margin: 0 0 4px; color: #166534; font-size: 14px; font-weight: 700;">Need Help?</p>
+                                            <p style="margin: 0; color: #15803d; font-size: 13px; line-height: 1.6;">
+                                                If you have any questions or need assistance, contact our support team at 
+                                                <a href="mailto:support@iaudit.global" style="color: #1e855e; font-weight: 700; text-decoration: underline;">support@iaudit.global</a>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Footer -->
+                                    <div style="background-color: #f1f5f9; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+                                        <p style="margin: 0 0 4px; color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} iAudit. All rights reserved.</p>
+                                        <p style="margin: 0; color: #94a3b8; font-size: 11px;">This is an automated email. Please do not reply directly to this message.</p>
+                                    </div>
+                                </div>
+                            `
+                        };
+
+                        // Fire and forget — don't block webhook response
+                        transporter.sendMail(confirmationMail)
+                            .then(() => console.log(`Subscription confirmation email sent to ${subscribedUser.email}`))
+                            .catch(err => console.error('Failed to send subscription confirmation email:', err.message));
+                    }
+                } catch (emailError) {
+                    console.error('Error preparing subscription confirmation email:', emailError.message);
+                }
+
                 break;
             }
 
@@ -445,6 +553,134 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                     }
 
                     console.log('Subscription renewed via invoice.paid:', invoice.subscription);
+
+                // Send invoice + receipt email to user
+                try {
+                    // Fetch the invoice with deep expansion to get receipt URL (same as billing history)
+                    const fullInvoice = await stripe.invoices.retrieve(invoice.id, {
+                        expand: ['charge', 'payment_intent.latest_charge']
+                    });
+
+                    const invoiceUser = await prisma.user.findFirst({
+                        where: { stripeCustomerId: fullInvoice.customer }
+                    });
+
+                    if (invoiceUser && invoiceUser.email) {
+                        // Extract receipt URL exactly as billing history does
+                        let receipt_url = null;
+                        if (fullInvoice.charge && typeof fullInvoice.charge === 'object') {
+                            receipt_url = fullInvoice.charge.receipt_url;
+                        }
+                        if (!receipt_url && fullInvoice.payment_intent && typeof fullInvoice.payment_intent === 'object') {
+                            receipt_url = fullInvoice.payment_intent.latest_charge?.receipt_url ||
+                                          fullInvoice.payment_intent.charges?.data?.[0]?.receipt_url;
+                        }
+                        if (!receipt_url) {
+                            receipt_url = fullInvoice.hosted_invoice_url;
+                        }
+
+                        const invoice_pdf = fullInvoice.invoice_pdf || null;
+                        const hosted_invoice_url = fullInvoice.hosted_invoice_url || null;
+                        const amountPaid = fullInvoice.amount_paid ? `${fullInvoice.currency?.toUpperCase() === 'GBP' ? '£' : '$'}${(fullInvoice.amount_paid / 100).toFixed(2)}` : 'N/A';
+                        const invoiceNumber = fullInvoice.number || invoice.id;
+                        const paymentDate = fullInvoice.status_transitions?.paid_at
+                            ? new Date(fullInvoice.status_transitions.paid_at * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+                            : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+                        const invoiceMail = {
+                            from: process.env.SMTP_USER || 'noreply@iaudit.global',
+                            to: invoiceUser.email,
+                            subject: `Your iAudit Invoice – ${invoiceNumber}`,
+                            html: `
+                                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+
+                                    <!-- Header -->
+                                    <div style="background: linear-gradient(135deg, #213847 0%, #1e855e 100%); padding: 36px 32px; text-align: center;">
+                                        <h1 style="color: #ffffff; margin: 0 0 6px; font-size: 24px; font-weight: 800; letter-spacing: -0.015em;">Your iAudit Invoice</h1>
+                                        <p style="color: rgba(255,255,255,0.75); margin: 0; font-size: 14px;">Invoice Reference: <strong style="color:#fff;">${invoiceNumber}</strong></p>
+                                    </div>
+
+                                    <!-- Greeting -->
+                                    <div style="padding: 32px 32px 0;">
+                                        <p style="margin: 0 0 12px; color: #374151; font-size: 16px; line-height: 1.6;">
+                                            Hi <strong>${invoiceUser.firstName} ${invoiceUser.lastName}</strong>,
+                                        </p>
+                                        <p style="margin: 0 0 28px; color: #4b5563; font-size: 15px; line-height: 1.7;">
+                                            Thank you for your payment. Here's your latest invoice for your iAudit subscription. Your documents are available via the links below.
+                                        </p>
+                                    </div>
+
+                                    <!-- Payment Summary Card -->
+                                    <div style="padding: 0 32px 28px;">
+                                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                                            <div style="background-color: #213847; padding: 14px 24px;">
+                                                <h3 style="margin: 0; color: #ffffff; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Payment Summary</h3>
+                                            </div>
+                                            <table style="width: 100%; border-collapse: collapse;">
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 13px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; width: 45%;">Invoice Number</td>
+                                                    <td style="padding: 13px 24px; color: #111827; font-size: 14px; font-weight: 700;">${invoiceNumber}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                                    <td style="padding: 13px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Date of Payment</td>
+                                                    <td style="padding: 13px 24px; color: #111827; font-size: 14px; font-weight: 700;">${paymentDate}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 13px 24px; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Amount Paid</td>
+                                                    <td style="padding: 13px 24px; color: #1e855e; font-size: 20px; font-weight: 800;">${amountPaid}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <!-- Document Links -->
+                                    <div style="padding: 0 32px 32px;">
+                                        <p style="margin: 0 0 16px; color: #374151; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Your Documents</p>
+                                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                                            ${hosted_invoice_url ? `
+                                            <a href="${hosted_invoice_url}" target="_blank" style="display: block; background-color: #213847; color: #ffffff; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-size: 14px; font-weight: 700; text-align: center;">
+                                                🧾 &nbsp; View Invoice Online
+                                            </a>` : ''}
+                                            ${invoice_pdf ? `
+                                            <a href="${invoice_pdf}" target="_blank" style="display: block; background-color: #f8fafc; border: 1.5px solid #e2e8f0; color: #213847; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-size: 14px; font-weight: 700; text-align: center;">
+                                                📄 &nbsp; Download Invoice PDF
+                                            </a>` : ''}
+                                            ${receipt_url ? `
+                                            <a href="${receipt_url}" target="_blank" style="display: block; background-color: #f0fdf4; border: 1.5px solid #bbf7d0; color: #166534; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-size: 14px; font-weight: 700; text-align: center;">
+                                                ✅ &nbsp; View Payment Receipt
+                                            </a>` : ''}
+                                        </div>
+                                        ${!hosted_invoice_url && !invoice_pdf && !receipt_url ? `<p style="color:#9ca3af; font-size:13px; margin-top:8px; font-style:italic;">Documents will be available shortly. You can also access them from your Billing History in the dashboard.</p>` : ''}
+                                    </div>
+
+                                    <!-- Help -->
+                                    <div style="padding: 0 32px 32px;">
+                                        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px 22px; border-radius: 10px;">
+                                            <p style="margin: 0 0 4px; color: #166534; font-size: 14px; font-weight: 700;">Questions about this invoice?</p>
+                                            <p style="margin: 0; color: #15803d; font-size: 13px; line-height: 1.6;">
+                                                Contact our support team at
+                                                <a href="mailto:support@iaudit.global" style="color: #1e855e; font-weight: 700; text-decoration: underline;">support@iaudit.global</a>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Footer -->
+                                    <div style="background-color: #f1f5f9; padding: 18px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+                                        <p style="margin: 0 0 4px; color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} iAudit. All rights reserved.</p>
+                                        <p style="margin: 0; color: #94a3b8; font-size: 11px;">This is an automated billing notification. Please do not reply to this email.</p>
+                                    </div>
+                                </div>
+                            `
+                        };
+
+                        transporter.sendMail(invoiceMail)
+                            .then(() => console.log(`Invoice email sent to ${invoiceUser.email} for invoice ${invoiceNumber}`))
+                            .catch(err => console.error('Failed to send invoice email:', err.message));
+                    }
+                } catch (invoiceEmailError) {
+                    console.error('Error sending invoice email:', invoiceEmailError.message);
+                }
+
                 break;
             }
 
@@ -2327,7 +2563,7 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
 
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
-            to: 'iven@iaudit.global',
+            to: 'support@iaudit.global',
             subject: `[Cancellation Request] ${user.firstName} ${user.lastName}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -2394,7 +2630,7 @@ app.post('/api/subscription/upgrade-request', async (req, res) => {
 
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
-            to: 'iven@iaudit.global',
+            to: 'support@iaudit.global',
             subject: `[Upgrade Request] ${user.firstName} ${user.lastName}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">

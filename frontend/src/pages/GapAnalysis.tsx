@@ -38,6 +38,10 @@ const GapAnalysis = () => {
     const { companies } = useCompanyStore();
     const userCompany = companies.length > 0 ? companies[0] : null;
 
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const isFreeUser = user.subscriptionStatus !== 'active';
+
+
     // Setup State
     const [companyName, setCompanyName] = useState("");
     const [auditDate, setAuditDate] = useState(new Date().toISOString().split('T')[0]);
@@ -59,6 +63,7 @@ const GapAnalysis = () => {
     const [newQuestionText, setNewQuestionText] = useState("");
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [questionToDelete, setQuestionToDelete] = useState<string | null>(null);
+    const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
 
     // Refs for Charts (for PDF generation)
     const pieChartRef = useRef<HTMLDivElement>(null);
@@ -331,7 +336,16 @@ const GapAnalysis = () => {
                     {/* Header Actions */}
                     {step === "list" && (
                         <div className="flex w-full sm:w-auto">
-                            <Button onClick={() => setStep("setup")} className="w-full sm:w-auto bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl h-10 px-4 font-medium shadow-sm transition-all duration-200">
+                            <Button onClick={() => {
+                                if (isFreeUser && savedAnalyses.length >= 3) {
+                                    setIsLimitModalOpen(true);
+                                } else {
+                                    setStep("setup");
+                                    setCompanyName("");
+                                    setStandard("");
+                                    setCurrentId(null);
+                                }
+                            }} className="w-full sm:w-auto bg-[#213847] hover:bg-[#213847]/90 text-white rounded-xl h-10 px-4 font-medium shadow-sm transition-all duration-200">
                                 <Plus className="w-4 h-4 mr-2" /> New Analysis
                             </Button>
                         </div>
@@ -966,7 +980,41 @@ const GapAnalysis = () => {
                         </div>
                     )
                 }
-            </div>
+        </div>
+            {/* Trial Limit Modal */}
+            <Dialog open={isLimitModalOpen} onOpenChange={setIsLimitModalOpen}>
+                <DialogContent className="sm:max-w-md w-[95vw] rounded-3xl p-0 overflow-hidden border-0">
+                    <div className="bg-amber-100/50 p-6 sm:p-8 flex items-center justify-center relative">
+                        <div className="bg-amber-100 p-4 rounded-full">
+                            <AlertCircle className="w-12 h-12 text-amber-600" />
+                        </div>
+                    </div>
+                    <div className="p-6 sm:p-8 text-center space-y-4">
+                        <DialogTitle className="text-xl sm:text-2xl font-black text-slate-800">Trial Limit Reached</DialogTitle>
+                        <DialogDescription className="text-sm sm:text-base text-slate-500 font-medium">
+                            You have reached the maximum limit of 3 Gap Analyses for trial users. You can still view your saved reports.
+                        </DialogDescription>
+                        <p className="text-sm font-semibold text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            Upgrade to a premium plan to unlock unlimited analyses and premium features.
+                        </p>
+                    </div>
+                    <DialogFooter className="p-4 sm:p-6 bg-slate-50 border-t flex flex-col sm:flex-row gap-3">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setIsLimitModalOpen(false)}
+                            className="w-full sm:w-auto h-12 rounded-xl text-slate-600 font-bold border-slate-200 sm:flex-1"
+                        >
+                            Maybe Later
+                        </Button>
+                        <Button 
+                            onClick={() => window.location.href = '/subscription'}
+                            className="w-full sm:w-auto h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold border-0 shadow-lg shadow-orange-500/20 sm:flex-1 gap-2"
+                        >
+                            Subscribe Now <ArrowRight className="w-4 h-4" />
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>            
         </div >
     );
 };
