@@ -67,6 +67,9 @@ const Index = () => {
     if (!isLoading && user && !user.onboardingCompleted && companies.length === 0) {
       setShowWelcome(true);
       setOnboardingStep(1);
+    } else if (!isLoading && user && !user.onboardingCompleted && companies.length > 0 && totalSites === 0) {
+      setShowWelcome(true);
+      setOnboardingStep(2);
     }
   }, [isLoading, companies.length, totalSites]);
 
@@ -77,8 +80,13 @@ const Index = () => {
       setCurrentUser(user);
       
       // Show trial modal ONLY IF onboarding is completed
-      // and trial hasn't started and user is on trial tier
-      if (user.onboardingCompleted && user.subscriptionStatus === 'trial' && !user.trialEndDate && !localStorage.getItem('trial_modal_seen')) {
+      // and trial hasn't started and user is on trial tier (or no status yet)
+      const hasFinishedOnboarding = user.onboardingCompleted === true || user.onboardingCompleted === 'true';
+      const noTrialStarted = !user.trialEndDate;
+      const onTrialTier = !user.subscriptionStatus || user.subscriptionStatus === 'trial';
+      const notSeenYet = !localStorage.getItem('trial_modal_seen');
+
+      if (hasFinishedOnboarding && noTrialStarted && onTrialTier && notSeenYet) {
         setShowTrialModal(true);
         localStorage.setItem('trial_modal_seen', 'true');
       }
@@ -919,7 +927,7 @@ const Index = () => {
           const success = await addCompany(data);
           if (success) {
             setShowCreateCompany(false);
-            setOnboardingStep(2);
+            setOnboardingStep(2); // Move to Site
             setShowWelcome(true); // Go back to welcome modal as requested
             toast.success("Company created! Now let's add your first site.");
           }

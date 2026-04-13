@@ -323,6 +323,36 @@ const AuditPrograms = () => {
         }
     };
 
+    const handleCompleteOnboarding = async () => {
+        try {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (user && user.id) {
+                // 1. Persist in backend
+                const response = await fetch(`${API_BASE_URL}/api/users/${user.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ onboardingCompleted: true })
+                });
+
+                const responseData = await response.json();
+
+                // 2. Update local storage with fresh data from server
+                localStorage.setItem('user', JSON.stringify(responseData));
+                localStorage.setItem('iaudit_onboarding_tour_completed', 'true');
+            }
+
+            // 3. Clear onboarding param and force a hard reload to "/"
+            // This ensures a fresh mount of Index.tsx which will trigger the TrialModal
+            toast.success("Onboarding completed successfully!");
+            setTimeout(() => {
+                window.location.href = "/";
+            }, 500);
+        } catch (error) {
+            console.error("Error completing onboarding:", error);
+            toast.error("Failed to complete onboarding. Please try again.");
+        }
+    };
+
     const resetForm = () => {
         setCurrentId(null);
         setAuditName("");
@@ -789,14 +819,7 @@ const AuditPrograms = () => {
                                             <Button 
                                                 size="sm"
                                                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl px-8 shadow-lg shadow-emerald-200 transition-all active:scale-95 py-6 text-base"
-                                                onClick={() => {
-                                                    setShowOnboardingGuide(false);
-                                                    // Set completion flag
-                                                    localStorage.setItem('iaudit_onboarding_tour_completed', 'true');
-                                                    const newParams = new URLSearchParams(searchParams);
-                                                    newParams.delete("onboarding");
-                                                    setSearchParams(newParams);
-                                                }}
+                                                onClick={handleCompleteOnboarding}
                                             >
                                                 Done <Check className="ml-2 w-5 h-5" />
                                             </Button>

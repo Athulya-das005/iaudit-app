@@ -17,7 +17,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   
   const shouldShowModal = (user?.subscriptionStatus === 'expired' || isExpired) && 
     user?.subscriptionStatus !== 'active' &&
-    location.pathname !== '/subscription';
+    location.pathname !== '/subscription' &&
+    !location.search.includes('onboarding=true') &&
+    user?.onboardingCompleted;
 
   useEffect(() => {
     if (shouldShowModal) {
