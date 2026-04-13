@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt';
 import Stripe from 'stripe';
 import { STRIPE_CONFIG } from './stripe-config.js';
 import { execSync } from 'child_process';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
@@ -858,8 +859,16 @@ app.get('/', (req, res) => {
     res.send('AuditMate Backend is running.');
 });
 
+const adminUpgradeDbLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1, // allow at most one upgrade attempt per IP per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many upgrade requests. Please try again later.' }
+});
+
 // Admin Route to manually force DB Schema push 
-app.get('/api/admin/upgrade-db', (req, res) => {
+app.get('/api/admin/upgrade-db', adminUpgradeDbLimiter, (req, res) => {
     try {
         console.log('Manual DB upgrade requested...');
         const outputPush = execSync('npx prisma db push --accept-data-loss', { encoding: 'utf-8' });
