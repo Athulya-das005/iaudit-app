@@ -42,7 +42,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         console.log(`Stripe Webhook Received: ${event.type}`);
     } catch (err) {
         console.error(`Webhook Signature Verification Failed: ${err.message}`);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
+        return res.status(400).json({ error: 'Webhook signature verification failed' });
     }
 
     // Idempotency check
