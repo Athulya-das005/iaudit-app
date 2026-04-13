@@ -2586,10 +2586,28 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => {
+            const entities = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return entities[char];
+        });
+
+        const safeFirstName = escapeHtml(user.firstName || '');
+        const safeLastName = escapeHtml(user.lastName || '');
+        const safeEmail = escapeHtml(user.email || '');
+        const safePlan = escapeHtml(user.subscriptionPlan ? user.subscriptionPlan.toUpperCase() : 'N/A');
+        const safeReason = escapeHtml(reason);
+        const safeDescription = escapeHtml(description || 'No additional comments provided.');
+
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
             to: 'support@iaudit.global',
-            subject: `[Cancellation Request] ${user.firstName} ${user.lastName}`,
+            subject: `[Cancellation Request] ${safeFirstName} ${safeLastName}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                     <div style="background-color: #dc2626; padding: 32px 24px; text-align: center;">
@@ -2601,19 +2619,19 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
                         <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
                              <div style="margin-bottom: 16px;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safeFirstName} ${safeLastName} (${safeEmail})</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Plan Details</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.subscriptionPlan ? user.subscriptionPlan.toUpperCase() : 'N/A'}</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safePlan}</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Primary Reason</p>
-                                <p style="margin: 0; font-weight: 700; color: #dc2626; font-size: 15px;">${reason}</p>
+                                <p style="margin: 0; font-weight: 700; color: #dc2626; font-size: 15px;">${safeReason}</p>
                             </div>
                             <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Detailed Feedback</p>
-                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${safeDescription}</p>
                             </div>
                         </div>
                     </div>
