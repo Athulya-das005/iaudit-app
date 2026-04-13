@@ -2649,6 +2649,13 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
 });
 
 // --- Subscription Upgrade Request ---
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 app.post('/api/subscription/upgrade-request', async (req, res) => {
     const { userId, targetPlan, description } = req.body;
 
@@ -2671,6 +2678,12 @@ app.post('/api/subscription/upgrade-request', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        const safeFirstName = escapeHtml(user.firstName || '');
+        const safeLastName = escapeHtml(user.lastName || '');
+        const safeEmail = escapeHtml(user.email || '');
+        const safeTargetPlan = escapeHtml(targetPlan);
+        const safeDescription = escapeHtml(description || 'No additional comments provided.');
+
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
             to: 'support@iaudit.global',
@@ -2686,15 +2699,15 @@ app.post('/api/subscription/upgrade-request', async (req, res) => {
                         <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
                              <div style="margin-bottom: 16px;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safeFirstName} ${safeLastName} (${safeEmail})</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Target Plan</p>
-                                <p style="margin: 0; font-weight: 700; color: #1e855e; font-size: 17px;">${targetPlan}</p>
+                                <p style="margin: 0; font-weight: 700; color: #1e855e; font-size: 17px;">${safeTargetPlan}</p>
                             </div>
                             <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Additional Comments</p>
-                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${safeDescription}</p>
                             </div>
                         </div>
                     </div>
