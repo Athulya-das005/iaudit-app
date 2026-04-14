@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt';
 import Stripe from 'stripe';
 import { STRIPE_CONFIG } from './stripe-config.js';
 import { execSync } from 'child_process';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
@@ -27,7 +28,7 @@ const PORT = process.env.PORT || 3001;
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.use(cors({
-    origin: ['https://apps.iaudit.global', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:8080', 'http://localhost:8081'], // Allow production and local development
+    origin: ['https://apps.iaudit.global', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:8080', 'http://localhost:8081'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires']
 }));
@@ -41,7 +42,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         console.log(`Stripe Webhook Received: ${event.type}`);
     } catch (err) {
         console.error(`Webhook Signature Verification Failed: ${err.message}`);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
+        return res.status(400).json({ error: 'Webhook signature verification failed' });
     }
 
     // Idempotency check
@@ -858,8 +859,16 @@ app.get('/', (req, res) => {
     res.send('AuditMate Backend is running.');
 });
 
+const adminUpgradeDbLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1, // allow at most one upgrade attempt per IP per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many upgrade requests. Please try again later.' }
+});
+
 // Admin Route to manually force DB Schema push 
-app.get('/api/admin/upgrade-db', (req, res) => {
+app.get('/api/admin/upgrade-db', adminUpgradeDbLimiter, (req, res) => {
     try {
         console.log('Manual DB upgrade requested...');
         const outputPush = execSync('npx prisma db push --accept-data-loss', { encoding: 'utf-8' });
@@ -2577,10 +2586,28 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => {
+            const entities = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return entities[char];
+        });
+
+        const safeFirstName = escapeHtml(user.firstName || '');
+        const safeLastName = escapeHtml(user.lastName || '');
+        const safeEmail = escapeHtml(user.email || '');
+        const safePlan = escapeHtml(user.subscriptionPlan ? user.subscriptionPlan.toUpperCase() : 'N/A');
+        const safeReason = escapeHtml(reason);
+        const safeDescription = escapeHtml(description || 'No additional comments provided.');
+
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
             to: 'support@iaudit.global',
-            subject: `[Cancellation Request] ${user.firstName} ${user.lastName}`,
+            subject: `[Cancellation Request] ${safeFirstName} ${safeLastName}`,
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                     <div style="background-color: #dc2626; padding: 32px 24px; text-align: center;">
@@ -2592,19 +2619,19 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
                         <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
                              <div style="margin-bottom: 16px;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safeFirstName} ${safeLastName} (${safeEmail})</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Plan Details</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.subscriptionPlan ? user.subscriptionPlan.toUpperCase() : 'N/A'}</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safePlan}</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Primary Reason</p>
-                                <p style="margin: 0; font-weight: 700; color: #dc2626; font-size: 15px;">${reason}</p>
+                                <p style="margin: 0; font-weight: 700; color: #dc2626; font-size: 15px;">${safeReason}</p>
                             </div>
                             <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Detailed Feedback</p>
-                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${safeDescription}</p>
                             </div>
                         </div>
                     </div>
@@ -2622,6 +2649,13 @@ app.post('/api/subscription/cancel-request', async (req, res) => {
 });
 
 // --- Subscription Upgrade Request ---
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 app.post('/api/subscription/upgrade-request', async (req, res) => {
     const { userId, targetPlan, description } = req.body;
 
@@ -2644,6 +2678,12 @@ app.post('/api/subscription/upgrade-request', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        const safeFirstName = escapeHtml(user.firstName || '');
+        const safeLastName = escapeHtml(user.lastName || '');
+        const safeEmail = escapeHtml(user.email || '');
+        const safeTargetPlan = escapeHtml(targetPlan);
+        const safeDescription = escapeHtml(description || 'No additional comments provided.');
+
         const mailOptions = {
             from: process.env.SMTP_USER || 'noreply@iaudit.global',
             to: 'support@iaudit.global',
@@ -2659,15 +2699,15 @@ app.post('/api/subscription/upgrade-request', async (req, res) => {
                         <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
                              <div style="margin-bottom: 16px;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">User Identification</p>
-                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${user.firstName} ${user.lastName} (${user.email})</p>
+                                <p style="margin: 0; font-weight: 700; color: #111827; font-size: 15px;">${safeFirstName} ${safeLastName} (${safeEmail})</p>
                             </div>
                             <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 4px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Target Plan</p>
-                                <p style="margin: 0; font-weight: 700; color: #1e855e; font-size: 17px;">${targetPlan}</p>
+                                <p style="margin: 0; font-weight: 700; color: #1e855e; font-size: 17px;">${safeTargetPlan}</p>
                             </div>
                             <div style="padding-top: 16px; border-top: 1px solid #e5e7eb;">
                                 <p style="margin: 0 0 8px; color: #9ca3af; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Additional Comments</p>
-                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${description || 'No additional comments provided.'}</p>
+                                <p style="margin: 0; color: #374151; line-height: 1.6; font-size: 14px;">${safeDescription}</p>
                             </div>
                         </div>
                     </div>
