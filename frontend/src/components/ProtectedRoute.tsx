@@ -24,10 +24,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             (new Date(user.trialEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
         );
         
-        const isExpired = (user.subscriptionStatus === 'trial' && remainingDays <= 0) || user.subscriptionStatus === 'expired';
+        const isExpired = (user.subscriptionStatus === 'trial' && user.trialEndDate && remainingDays <= 0) || user.subscriptionStatus === 'expired';
         const isSubscriptionActive = user.subscriptionStatus === 'active';
+        const isOnboarding = location.search.includes('onboarding=true');
 
-        if (isExpired && !isSubscriptionActive) {
+        if (isExpired && !isSubscriptionActive && !isOnboarding) {
             const allowedPaths = ['/', '/feedback', '/subscription', '/profile-settings', '/account-settings'];
             const isPathAllowed = allowedPaths.includes(location.pathname);
 
