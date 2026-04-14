@@ -26,9 +26,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         
         const isExpired = (user.subscriptionStatus === 'trial' && user.trialEndDate && remainingDays <= 0) || user.subscriptionStatus === 'expired';
         const isSubscriptionActive = user.subscriptionStatus === 'active';
-        const isOnboarding = location.search.includes('onboarding=true');
+        
+        // Allowed onboarding routes that bypass expiration lock
+        const onboardingRoutes = ['/', '/users', '/self-assessment', '/gap-analysis', '/audits'];
+        const isOnboardingRoute = onboardingRoutes.includes(location.pathname);
 
-        if (isExpired && !isSubscriptionActive && !isOnboarding) {
+        if (isExpired && !isSubscriptionActive && !isOnboardingRoute) {
             const allowedPaths = ['/', '/feedback', '/subscription', '/profile-settings', '/account-settings'];
             const isPathAllowed = allowedPaths.includes(location.pathname);
 
