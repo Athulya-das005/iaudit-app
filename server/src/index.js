@@ -30,8 +30,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 app.use(cors({
     origin: ['https://apps.iaudit.global', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:8080', 'http://localhost:8081'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma', 'Expires']
 }));
 // --- Stripe Webhook Route (MUST BE BEFORE express.json()) ---
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
